@@ -1,45 +1,36 @@
 /**
- * NEOASSIST AI — Autonomous Voice & Text Conversational Database Engine
- * Award-Winning UI/UX, Dynamic Schema Introspection, Web Speech API & Interactive Grid
+ * NEOASSIST AI — Autonomous Voice & Text Database Engine
+ * Dynamic Schema Synchronization, Web Speech API & Real-time Grid
  */
 
 (() => {
     'use strict';
 
-    // -------------------------------------------------------------------------
-    // STATE MANAGEMENT
-    // -------------------------------------------------------------------------
+    // State
     const state = {
         isListening: false,
         recognition: null,
-        soundEnabled: true,
         currentResultData: { columns: [], rows: [] },
         sortState: { column: null, direction: 'asc' },
-        currentSchema: { tables: [], total_tables: 0 },
-        audioCtx: null
+        currentSchema: { tables: [], total_tables: 0 }
     };
 
-    // -------------------------------------------------------------------------
-    // DOM ELEMENTS
-    // -------------------------------------------------------------------------
+    // Elements
     const elements = {
-        // Nav & Status
-        dbTableCountBadge: document.getElementById('dbTableCountBadge'),
-        aiModelBadge: document.getElementById('aiModelBadge'),
-        aiModelText: document.getElementById('aiModelText'),
-        audioToggleBtn: document.getElementById('audioToggleBtn'),
-        audioToggleIcon: document.getElementById('audioToggleIcon'),
-        resetDbBtn: document.getElementById('resetDbBtn'),
+        // Navigation & Status
+        navTableCount: document.getElementById('navTableCount'),
+        navTableCountText: document.getElementById('navTableCountText'),
         apiKeyModalBtn: document.getElementById('apiKeyModalBtn'),
+        resetDbBtn: document.getElementById('resetDbBtn'),
 
         // Sidebar
         schemaTreeContainer: document.getElementById('schemaTreeContainer'),
-        schemaEmptyState: document.getElementById('schemaEmptyState'),
-        tableCountBadge: document.getElementById('tableCountBadge'),
+        emptySchemaPlaceholder: document.getElementById('emptySchemaPlaceholder'),
+        sidebarTableCount: document.getElementById('sidebarTableCount'),
         refreshSchemaBtn: document.getElementById('refreshSchemaBtn'),
         schemaSearchInput: document.getElementById('schemaSearchInput'),
 
-        // Command Console
+        // Console
         promptInput: document.getElementById('promptInput'),
         micBtn: document.getElementById('micBtn'),
         micIcon: document.getElementById('micIcon'),
@@ -47,28 +38,25 @@
         executeIcon: document.getElementById('executeIcon'),
         executeBtnText: document.getElementById('executeBtnText'),
         directSqlToggle: document.getElementById('directSqlToggle'),
-        voiceListeningBanner: document.getElementById('voiceListeningBanner'),
-        voiceTranscriptPreview: document.getElementById('voiceTranscriptPreview'),
+        voiceActiveBar: document.getElementById('voiceActiveBar'),
+        voiceTranscriptText: document.getElementById('voiceTranscriptText'),
         voiceCancelBtn: document.getElementById('voiceCancelBtn'),
-        presetChipsContainer: document.getElementById('presetChipsContainer'),
 
-        // Terminal Panel
+        // Terminal
         sqlCodeBlock: document.getElementById('sqlCodeBlock'),
         queryTypeBadge: document.getElementById('queryTypeBadge'),
-        queryLatencyBadge: document.getElementById('queryLatencyBadge'),
-        queryRowBadge: document.getElementById('queryRowBadge'),
+        latencyBadge: document.getElementById('latencyBadge'),
+        rowsBadge: document.getElementById('rowsBadge'),
         copySqlBtn: document.getElementById('copySqlBtn'),
         copyBtnText: document.getElementById('copyBtnText'),
-        insightsContent: document.getElementById('insightsContent'),
-        insightsSourceTag: document.getElementById('insightsSourceTag'),
+        explanationText: document.getElementById('explanationText'),
 
-        // Data Workspace
-        tableContainer: document.getElementById('tableContainer'),
-        tableEmptyState: document.getElementById('tableEmptyState'),
-        neoDataTable: document.getElementById('neoDataTable'),
-        neoTableHead: document.getElementById('neoTableHead'),
-        neoTableBody: document.getElementById('neoTableBody'),
-        dataCountTag: document.getElementById('dataCountTag'),
+        // Data Grid
+        dataTable: document.getElementById('dataTable'),
+        tableHead: document.getElementById('tableHead'),
+        tableBody: document.getElementById('tableBody'),
+        emptyTableState: document.getElementById('emptyTableState'),
+        recordCounterTag: document.getElementById('recordCounterTag'),
         tableFilterInput: document.getElementById('tableFilterInput'),
         exportCsvBtn: document.getElementById('exportCsvBtn'),
         exportJsonBtn: document.getElementById('exportJsonBtn'),
@@ -79,9 +67,9 @@
         cancelApiKeyBtn: document.getElementById('cancelApiKeyBtn'),
         saveApiKeyBtn: document.getElementById('saveApiKeyBtn'),
         geminiKeyInput: document.getElementById('geminiKeyInput'),
-        toggleKeyVisibility: document.getElementById('toggleKeyVisibility'),
+        toggleKeyVisBtn: document.getElementById('toggleKeyVisBtn'),
         keyVisIcon: document.getElementById('keyVisIcon'),
-        keyModalStatus: document.getElementById('keyModalStatus'),
+        keyStatusFeedback: document.getElementById('keyStatusFeedback'),
 
         resetModal: document.getElementById('resetModal'),
         closeResetModalBtn: document.getElementById('closeResetModalBtn'),
@@ -92,101 +80,32 @@
     };
 
     // -------------------------------------------------------------------------
-    // WEB AUDIO API SOUND SYSTEM
-    // -------------------------------------------------------------------------
-    function playAudioTone(type) {
-        if (!state.soundEnabled) return;
-        try {
-            if (!state.audioCtx) {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                state.audioCtx = new AudioContext();
-            }
-            if (state.audioCtx.state === 'suspended') {
-                state.audioCtx.resume();
-            }
-
-            const ctx = state.audioCtx;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-
-            const now = ctx.currentTime;
-
-            if (type === 'mic-start') {
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(440, now);
-                osc.frequency.exponentialRampToValueAtTime(880, now + 0.12);
-                gain.gain.setValueAtTime(0.08, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-                osc.start(now);
-                osc.stop(now + 0.15);
-            } else if (type === 'mic-stop') {
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(880, now);
-                osc.frequency.exponentialRampToValueAtTime(440, now + 0.12);
-                gain.gain.setValueAtTime(0.08, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-                osc.start(now);
-                osc.stop(now + 0.15);
-            } else if (type === 'success') {
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(523.25, now); // C5
-                osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
-                osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
-                gain.gain.setValueAtTime(0.06, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-                osc.start(now);
-                osc.stop(now + 0.35);
-            } else if (type === 'error') {
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(220, now);
-                osc.frequency.setValueAtTime(160, now + 0.1);
-                gain.gain.setValueAtTime(0.08, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-                osc.start(now);
-                osc.stop(now + 0.25);
-            }
-        } catch (e) {
-            console.debug('Audio feedback error:', e);
-        }
-    }
-
-    // -------------------------------------------------------------------------
     // TOAST NOTIFICATIONS
     // -------------------------------------------------------------------------
-    function showToast(message, type = 'info', duration = 3500) {
+    function showToast(message, type = 'info', duration = 3000) {
         const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        
-        const iconMap = {
+        toast.className = `toast-msg ${type}`;
+        const icons = {
             success: 'fa-circle-check',
-            error: 'fa-circle-xmark',
+            error: 'fa-circle-exclamation',
             info: 'fa-circle-info'
         };
-
-        toast.innerHTML = `
-            <i class="fa-solid ${iconMap[type] || 'fa-bell'}"></i>
-            <span>${message}</span>
-        `;
-        
+        toast.innerHTML = `<i class="fa-solid ${icons[type] || 'fa-bell'}"></i> <span>${message}</span>`;
         elements.toastContainer.appendChild(toast);
-        
         setTimeout(() => {
             toast.style.opacity = '0';
-            toast.style.transform = 'translateY(10px)';
-            setTimeout(() => toast.remove(), 300);
+            setTimeout(() => toast.remove(), 250);
         }, duration);
     }
 
     // -------------------------------------------------------------------------
-    // WEB SPEECH API INITIALIZATION & CONTROLS
+    // WEB SPEECH API (VOICE PIPELINE)
     // -------------------------------------------------------------------------
     function initSpeechRecognition() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
-            elements.micBtn.title = 'Web Speech API not supported in this browser. Use Chrome or Edge for voice support.';
-            elements.micBtn.style.opacity = '0.5';
+            elements.micBtn.title = 'Speech Recognition requires Chrome or Edge (Web Speech API).';
+            elements.micBtn.style.opacity = '0.6';
             return;
         }
 
@@ -198,43 +117,39 @@
         recognition.onstart = () => {
             state.isListening = true;
             elements.micBtn.classList.add('recording');
-            elements.voiceListeningBanner.classList.add('active');
-            elements.voiceTranscriptPreview.textContent = 'Listening... Speak naturally (e.g. "Add employee Sarah...")';
-            playAudioTone('mic-start');
+            elements.voiceActiveBar.classList.add('active');
+            elements.voiceTranscriptText.textContent = 'Listening... Speak your database command naturally';
         };
 
         recognition.onresult = (event) => {
-            let interimTranscript = '';
-            let finalTranscript = '';
-
+            let interim = '';
+            let final = '';
             for (let i = event.resultIndex; i < event.results.length; ++i) {
-                const transcript = event.results[i][0].transcript;
+                const text = event.results[i][0].transcript;
                 if (event.results[i].isFinal) {
-                    finalTranscript += transcript;
+                    final += text;
                 } else {
-                    interimTranscript += transcript;
+                    interim += text;
                 }
             }
-
-            const current = finalTranscript || interimTranscript;
+            const current = final || interim;
             if (current) {
-                elements.voiceTranscriptPreview.textContent = `"${current}"`;
+                elements.voiceTranscriptText.textContent = `"${current}"`;
                 elements.promptInput.value = current;
-                autoExpandTextarea(elements.promptInput);
+                autoResizeTextarea(elements.promptInput);
             }
         };
 
         recognition.onerror = (event) => {
-            console.warn('Speech Recognition error:', event.error);
+            console.warn('Speech error:', event.error);
             stopListening();
             if (event.error !== 'no-speech') {
-                showToast(`Microphone notice: ${event.error}`, 'info');
+                showToast(`Voice input notice: ${event.error}`, 'info');
             }
         };
 
         recognition.onend = () => {
             stopListening();
-            // If user provided a prompt via voice, auto-focus execute button
             if (elements.promptInput.value.trim().length > 3) {
                 elements.executeBtn.focus();
             }
@@ -245,7 +160,7 @@
 
     function toggleListening() {
         if (!state.recognition) {
-            showToast('Voice input requires Chrome or Edge (Web Speech API).', 'info');
+            showToast('Voice input requires Web Speech API (Chrome/Edge).', 'info');
             return;
         }
 
@@ -255,8 +170,7 @@
         } else {
             try {
                 state.recognition.start();
-            } catch (e) {
-                console.error('Cannot start recognition:', e);
+            } catch (err) {
                 state.recognition.stop();
             }
         }
@@ -265,63 +179,46 @@
     function stopListening() {
         state.isListening = false;
         elements.micBtn.classList.remove('recording');
-        elements.voiceListeningBanner.classList.remove('active');
-        playAudioTone('mic-stop');
+        elements.voiceActiveBar.classList.remove('active');
     }
 
     // -------------------------------------------------------------------------
-    // SCHEMA INTROSPECTION & SIDEBAR RENDERING
+    // SCHEMA TREE RENDERING
     // -------------------------------------------------------------------------
     async function fetchSchema() {
         try {
             elements.refreshSchemaBtn.querySelector('i').classList.add('fa-spin');
             const res = await fetch('/api/schema');
             const data = await res.json();
-            
             if (data.success && data.schema) {
                 state.currentSchema = data.schema;
                 renderSchemaTree(data.schema);
-                updateTopBarStats(data.schema);
+                updateStats(data.schema);
             }
         } catch (err) {
-            console.error('Failed to introspect schema:', err);
+            console.error('Schema fetch error:', err);
         } finally {
             setTimeout(() => {
                 elements.refreshSchemaBtn.querySelector('i').classList.remove('fa-spin');
-            }, 300);
+            }, 250);
         }
     }
 
-    function updateTopBarStats(schema) {
+    function updateStats(schema) {
         const count = schema.total_tables || 0;
-        elements.tableCountBadge.textContent = count;
-        elements.dbTableCountBadge.textContent = `${count} ${count === 1 ? 'Table' : 'Tables'} Active`;
-        
-        // Update Gemini Model Badge if key exists in storage
-        const storedKey = localStorage.getItem('neoassist_gemini_key');
-        if (storedKey) {
-            elements.aiModelText.textContent = 'Gemini Active';
-            elements.aiModelBadge.classList.add('active-pill');
-        } else {
-            elements.aiModelText.textContent = 'Autonomous Engine';
-        }
+        elements.sidebarTableCount.textContent = count;
+        elements.navTableCountText.textContent = `${count} ${count === 1 ? 'Table' : 'Tables'} Active`;
     }
 
     function renderSchemaTree(schema) {
         elements.schemaTreeContainer.innerHTML = '';
-        
+
         if (!schema.tables || schema.tables.length === 0) {
             elements.schemaTreeContainer.innerHTML = `
-                <div class="schema-empty-state">
-                    <div class="empty-icon-wrap">
-                        <i class="fa-solid fa-cube"></i>
-                    </div>
-                    <h4>Zero-Config Start</h4>
-                    <p>Database is currently 100% empty (0 tables).</p>
-                    <div class="empty-guidance">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i>
-                        <span>Speak or type an instruction to dynamically build tables & insert records automatically!</span>
-                    </div>
+                <div class="empty-schema-msg">
+                    <div class="empty-icon"><i class="fa-solid fa-layer-group"></i></div>
+                    <h5>Zero-Config Empty State</h5>
+                    <p>Database has 0 tables. Speak or type a command to autonomously generate tables and insert records.</p>
                 </div>
             `;
             return;
@@ -330,72 +227,62 @@
         const filter = (elements.schemaSearchInput.value || '').toLowerCase().trim();
 
         schema.tables.forEach(table => {
-            // Check if matches filter
             const matchesTable = table.name.toLowerCase().includes(filter);
-            const matchingCols = table.columns.filter(c => c.name.toLowerCase().includes(filter) || c.type.toLowerCase().includes(filter));
-            
-            if (filter && !matchesTable && matchingCols.length === 0) {
-                return;
-            }
+            const matchesCol = table.columns.some(c => c.name.toLowerCase().includes(filter) || c.type.toLowerCase().includes(filter));
+
+            if (filter && !matchesTable && !matchesCol) return;
 
             const card = document.createElement('div');
-            card.className = 'table-card';
-            
+            card.className = 'schema-table-card';
+
             card.innerHTML = `
-                <div class="table-card-header" data-table="${table.name}">
-                    <div class="table-title-area">
-                        <i class="fa-solid fa-table cyan-glow-icon"></i>
-                        <span class="table-name">${escapeHtml(table.name)}</span>
-                        <span class="table-row-tag">${table.row_count} rows</span>
+                <div class="schema-table-header" data-table="${escapeHtml(table.name)}">
+                    <div class="table-label-wrap">
+                        <i class="fa-solid fa-table accent-icon"></i>
+                        <span class="table-name-txt">${escapeHtml(table.name)}</span>
+                        <span class="table-rows-badge">${table.row_count} rows</span>
                     </div>
-                    <div class="table-actions">
-                        <button class="table-quick-btn query-btn" title="SELECT * FROM ${table.name}">
+                    <div class="table-actions-wrap">
+                        <button class="table-action-pill query-btn" title="SELECT * FROM ${table.name}">
                             <i class="fa-solid fa-play"></i>
                         </button>
-                        <button class="table-quick-btn count-btn" title="COUNT(*) FROM ${table.name}">
+                        <button class="table-action-pill count-btn" title="COUNT(*) FROM ${table.name}">
                             <i class="fa-solid fa-calculator"></i>
                         </button>
-                        <button class="table-quick-btn drop-btn" title="DROP TABLE ${table.name}">
+                        <button class="table-action-pill drop-btn" title="DROP TABLE ${table.name}">
                             <i class="fa-solid fa-trash"></i>
                         </button>
                     </div>
                 </div>
-                <div class="table-columns-list">
+                <div class="table-columns-tray">
                     ${table.columns.map(col => `
-                        <div class="column-row">
-                            <div class="column-name-wrap">
-                                ${col.pk ? '<span class="col-pk-badge">PK</span>' : '<i class="fa-regular fa-circle" style="font-size:7px;color:#64748b;"></i>'}
-                                <span>${escapeHtml(col.name)}</span>
-                            </div>
-                            <span class="col-type-tag">${escapeHtml(col.type)}</span>
+                        <div class="tray-col-row">
+                            <span>${col.pk ? '<span class="col-pk">PK</span>' : ''} ${escapeHtml(col.name)}</span>
+                            <span class="col-type">${escapeHtml(col.type)}</span>
                         </div>
                     `).join('')}
                 </div>
             `;
 
-            // Table quick action bindings
-            const queryBtn = card.querySelector('.query-btn');
-            queryBtn.addEventListener('click', (e) => {
+            // Quick Actions
+            card.querySelector('.query-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 runDirectQuery(`SELECT * FROM "${table.name}" LIMIT 50;`);
             });
 
-            const countBtn = card.querySelector('.count-btn');
-            countBtn.addEventListener('click', (e) => {
+            card.querySelector('.count-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 runDirectQuery(`SELECT COUNT(*) as total_records FROM "${table.name}";`);
             });
 
-            const dropBtn = card.querySelector('.drop-btn');
-            dropBtn.addEventListener('click', (e) => {
+            card.querySelector('.drop-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (confirm(`Are you sure you want to DROP TABLE "${table.name}"?`)) {
+                if (confirm(`Drop table "${table.name}"?`)) {
                     runDirectQuery(`DROP TABLE IF EXISTS "${table.name}";`);
                 }
             });
 
-            // Click table header to view records
-            card.querySelector('.table-card-header').addEventListener('click', () => {
+            card.querySelector('.schema-table-header').addEventListener('click', () => {
                 runDirectQuery(`SELECT * FROM "${table.name}" LIMIT 50;`);
             });
 
@@ -404,21 +291,20 @@
     }
 
     // -------------------------------------------------------------------------
-    // EXECUTION PIPELINE (VOICE / TEXT / SQL)
+    // EXECUTION DISPATCHER
     // -------------------------------------------------------------------------
     async function executeQuery() {
         const prompt = elements.promptInput.value.trim();
         if (!prompt) {
-            showToast('Please type or speak a command first.', 'info');
+            showToast('Enter or speak a command first.', 'info');
             elements.promptInput.focus();
             return;
         }
 
-        const isDirectSql = elements.directSqlToggle.checked;
+        const isDirect = elements.directSqlToggle.checked;
         const storedKey = localStorage.getItem('neoassist_gemini_key') || '';
 
-        // UI Loading State
-        setLoadingState(true);
+        setLoading(true);
 
         try {
             const res = await fetch('/api/execute', {
@@ -427,7 +313,7 @@
                 body: JSON.stringify({
                     prompt: prompt,
                     api_key: storedKey,
-                    direct_sql: isDirectSql
+                    direct_sql: isDirect
                 })
             });
 
@@ -436,113 +322,96 @@
             if (!res.ok || !data.success) {
                 const errMsg = data.error || data.execution?.error || 'Execution failed';
                 showToast(`Error: ${errMsg}`, 'error');
-                playAudioTone('error');
-
-                // Render error state in terminal
                 elements.sqlCodeBlock.innerHTML = `<span style="color:#fb7185;">-- EXECUTION ERROR:\n${escapeHtml(errMsg)}\n\n-- SQL:\n${escapeHtml(data.ai_result?.sql || prompt)}</span>`;
                 elements.queryTypeBadge.textContent = 'ERROR';
-                elements.queryLatencyBadge.innerHTML = `<i class="fa-solid fa-clock"></i> ${data.execution?.execution_time_ms || 0} ms`;
+                elements.latencyBadge.innerHTML = `<i class="fa-solid fa-clock"></i> ${data.execution?.execution_time_ms || 0} ms`;
                 return;
             }
 
-            // Success path
-            playAudioTone('success');
-            showToast('Autonomous pipeline executed successfully!', 'success');
+            showToast('Query executed successfully!', 'success');
 
-            // 1. Update Terminal SQL Display with syntax highlighting
+            // 1. Update SQL Terminal
             const rawSql = data.execution.executed_sql || data.ai_result?.sql || prompt;
             renderSyntaxHighlightedSql(rawSql);
 
-            // 2. Update Terminal Badges
-            elements.queryTypeBadge.textContent = data.ai_result?.query_type || (isDirectSql ? 'SQL' : 'AI DQL');
-            elements.queryLatencyBadge.innerHTML = `<i class="fa-solid fa-clock"></i> ${data.execution.execution_time_ms} ms`;
+            // 2. Terminal Meta Badges
+            elements.queryTypeBadge.textContent = data.ai_result?.query_type || (isDirect ? 'SQL' : 'AI DQL');
+            elements.latencyBadge.innerHTML = `<i class="fa-solid fa-clock"></i> ${data.execution.execution_time_ms} ms`;
             
             const rowCount = data.execution.row_count || 0;
             const affected = data.execution.rows_affected || 0;
-            elements.queryRowBadge.innerHTML = `<i class="fa-solid fa-layer-group"></i> ${rowCount ? `${rowCount} rows` : `${affected} affected`}`;
+            elements.rowsBadge.innerHTML = `<i class="fa-solid fa-table-list"></i> ${rowCount ? `${rowCount} rows` : `${affected} affected`}`;
 
-            // 3. Update AI Insights Card
-            elements.insightsContent.textContent = data.ai_result?.explanation || 'Query executed cleanly on SQLite database.';
-            if (data.ai_result?.insights) {
-                elements.insightsContent.innerHTML += `<br><strong style="color:var(--accent-cyan);margin-top:6px;display:inline-block;">💡 Strategic Finding:</strong> ${escapeHtml(data.ai_result.insights)}`;
-            }
-            elements.insightsSourceTag.textContent = data.ai_result?.source || 'Autonomous Engine';
+            // 3. Explanation Footer
+            elements.explanationText.textContent = data.ai_result?.explanation || 'Query executed cleanly on database.';
 
-            // 4. Update Interactive Data Workspace
+            // 4. Data Grid
             state.currentResultData = {
                 columns: data.execution.columns || [],
                 rows: data.execution.rows || []
             };
             renderDataTable(state.currentResultData);
 
-            // 5. Update Live Schema Sidebar
+            // 5. Update Schema
             if (data.schema) {
                 state.currentSchema = data.schema;
                 renderSchemaTree(data.schema);
-                updateTopBarStats(data.schema);
+                updateStats(data.schema);
             } else {
                 fetchSchema();
             }
 
         } catch (err) {
-            console.error('Execution exception:', err);
+            console.error('Execution error:', err);
             showToast(`System exception: ${err.message}`, 'error');
-            playAudioTone('error');
         } finally {
-            setLoadingState(false);
+            setLoading(false);
         }
     }
 
     function runDirectQuery(sql) {
         elements.promptInput.value = sql;
         elements.directSqlToggle.checked = true;
-        autoExpandTextarea(elements.promptInput);
+        autoResizeTextarea(elements.promptInput);
         executeQuery();
     }
 
-    function setLoadingState(isLoading) {
+    function setLoading(isLoading) {
         elements.executeBtn.disabled = isLoading;
         if (isLoading) {
             elements.executeIcon.className = 'fa-solid fa-circle-notch fa-spin';
             elements.executeBtnText.textContent = 'Running...';
-            elements.sqlCodeBlock.innerHTML = '<span style="color:#94a3b8;">-- Synthesizing autonomous schema & executing query...\n-- Please wait...</span>';
+            elements.sqlCodeBlock.innerHTML = '<span style="color:#94a3b8;">-- Processing natural language & executing pipeline...\n-- Please wait...</span>';
             elements.queryTypeBadge.textContent = 'RUNNING';
         } else {
-            elements.executeIcon.className = 'fa-solid fa-bolt-lightning';
+            elements.executeIcon.className = 'fa-solid fa-bolt';
             elements.executeBtnText.textContent = 'Execute';
         }
     }
 
     // -------------------------------------------------------------------------
-    // SYNTAX HIGHLIGHTING (SQL FORMATTER)
+    // SQL SYNTAX HIGHLIGHTER
     // -------------------------------------------------------------------------
     function renderSyntaxHighlightedSql(rawSql) {
         const keywords = [
             'SELECT', 'FROM', 'WHERE', 'CREATE', 'TABLE', 'IF', 'NOT', 'EXISTS',
             'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'DROP', 'ALTER',
-            'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'GROUP', 'BY', 'ORDER',
-            'ASC', 'DESC', 'LIMIT', 'OFFSET', 'PRIMARY', 'KEY', 'AUTOINCREMENT',
-            'AND', 'OR', 'IN', 'LIKE', 'AS', 'PRAGMA', 'WITH', 'DEFAULT', 'GENERATED',
+            'JOIN', 'LEFT', 'RIGHT', 'INNER', 'ON', 'GROUP', 'BY', 'ORDER', 'ASC',
+            'DESC', 'LIMIT', 'OFFSET', 'PRIMARY', 'KEY', 'AUTOINCREMENT', 'AND',
+            'OR', 'IN', 'LIKE', 'AS', 'PRAGMA', 'WITH', 'DEFAULT', 'GENERATED',
             'ALWAYS', 'STORED', 'TEXT', 'INTEGER', 'REAL', 'TIMESTAMP', 'DATE', 'BOOLEAN'
         ];
-
         const funcs = ['COUNT', 'AVG', 'SUM', 'MAX', 'MIN', 'ROUND', 'DATE', 'DATETIME'];
 
         let highlighted = escapeHtml(rawSql);
-
-        // Highlight strings
         highlighted = highlighted.replace(/'([^']*)'/g, '<span class="sql-str">\'$1\'</span>');
-        
-        // Highlight numbers
         highlighted = highlighted.replace(/\b(\d+(\.\d+)?)\b/g, '<span class="sql-num">$1</span>');
 
-        // Highlight functions
         funcs.forEach(fn => {
             const regex = new RegExp(`\\b(${fn})\\b(?=\\s*\\()`, 'gi');
             highlighted = highlighted.replace(regex, '<span class="sql-fn">$1</span>');
         });
 
-        // Highlight keywords
         keywords.forEach(kw => {
             const regex = new RegExp(`\\b(${kw})\\b`, 'gi');
             highlighted = highlighted.replace(regex, '<span class="sql-keyword">$1</span>');
@@ -552,55 +421,51 @@
     }
 
     // -------------------------------------------------------------------------
-    // INTERACTIVE DATA WORKSPACE RENDERING
+    // DYNAMIC DATA GRID
     // -------------------------------------------------------------------------
     function renderDataTable(data) {
         const { columns, rows } = data;
-        
         if (!columns || columns.length === 0 || !rows || rows.length === 0) {
-            elements.neoDataTable.style.display = 'none';
-            elements.tableEmptyState.style.display = 'flex';
-            elements.dataCountTag.textContent = '0 records';
+            elements.dataTable.style.display = 'none';
+            elements.emptyTableState.style.display = 'flex';
+            elements.recordCounterTag.textContent = '0 records';
             return;
         }
 
-        elements.tableEmptyState.style.display = 'none';
-        elements.neoDataTable.style.display = 'table';
-        elements.dataCountTag.textContent = `${rows.length} ${rows.length === 1 ? 'record' : 'records'}`;
+        elements.emptyTableState.style.display = 'none';
+        elements.dataTable.style.display = 'table';
+        elements.recordCounterTag.textContent = `${rows.length} ${rows.length === 1 ? 'record' : 'records'}`;
 
         // Build Header
-        elements.neoTableHead.innerHTML = `
+        elements.tableHead.innerHTML = `
             <tr>
                 ${columns.map((col, idx) => `
-                    <th data-col-index="${idx}" data-col-name="${escapeHtml(col)}">
-                        <div class="th-inner">
+                    <th data-col="${escapeHtml(col)}" data-index="${idx}">
+                        <div class="th-cell">
                             <span>${escapeHtml(col)}</span>
-                            <i class="fa-solid fa-sort sort-icon" id="sort-icon-${idx}"></i>
+                            <i class="fa-solid fa-sort sort-indicator" id="sort-icon-${idx}"></i>
                         </div>
                     </th>
                 `).join('')}
             </tr>
         `;
 
-        // Attach sort listeners
-        elements.neoTableHead.querySelectorAll('th').forEach(th => {
+        elements.tableHead.querySelectorAll('th').forEach(th => {
             th.addEventListener('click', () => {
-                const colName = th.getAttribute('data-col-name');
-                const colIdx = parseInt(th.getAttribute('data-col-index'), 10);
+                const colName = th.getAttribute('data-col');
+                const colIdx = parseInt(th.getAttribute('data-index'), 10);
                 sortTable(colName, colIdx);
             });
         });
 
-        // Render Body
-        renderTableRows(rows, columns);
+        renderRows(rows, columns);
     }
 
-    function renderTableRows(rows, columns) {
-        elements.neoTableBody.innerHTML = '';
+    function renderRows(rows, columns) {
+        elements.tableBody.innerHTML = '';
         const filterVal = (elements.tableFilterInput.value || '').toLowerCase().trim();
 
         rows.forEach(row => {
-            // Apply client filter
             if (filterVal) {
                 const rowStr = Object.values(row).join(' ').toLowerCase();
                 if (!rowStr.includes(filterVal)) return;
@@ -610,19 +475,17 @@
             columns.forEach(col => {
                 const val = row[col];
                 const td = document.createElement('td');
-
                 if (typeof val === 'number') {
-                    td.className = 'td-number';
+                    td.className = 'td-num';
                     td.textContent = Number.isInteger(val) ? val.toLocaleString() : val.toFixed(2);
                 } else if (val === null || val === undefined) {
                     td.innerHTML = '<span style="color:#64748b;font-style:italic;">NULL</span>';
                 } else {
                     td.textContent = String(val);
                 }
-
                 tr.appendChild(td);
             });
-            elements.neoTableBody.appendChild(tr);
+            elements.tableBody.appendChild(tr);
         });
     }
 
@@ -633,79 +496,73 @@
         if (state.sortState.column === columnName && state.sortState.direction === 'asc') {
             direction = 'desc';
         }
-
         state.sortState = { column: columnName, direction: direction };
 
-        // Update sort icons
-        elements.neoTableHead.querySelectorAll('.sort-icon').forEach(icon => {
-            icon.className = 'fa-solid fa-sort sort-icon';
+        elements.tableHead.querySelectorAll('.sort-indicator').forEach(icon => {
+            icon.className = 'fa-solid fa-sort sort-indicator';
         });
-        const currentIcon = document.getElementById(`sort-icon-${colIdx}`);
-        if (currentIcon) {
-            currentIcon.className = `fa-solid fa-sort-${direction === 'asc' ? 'up' : 'down'} sort-icon cyan-glow-icon`;
+        const activeIcon = document.getElementById(`sort-icon-${colIdx}`);
+        if (activeIcon) {
+            activeIcon.className = `fa-solid fa-sort-${direction === 'asc' ? 'up' : 'down'} sort-indicator accent-icon`;
         }
 
-        // Sort data
         state.currentResultData.rows.sort((a, b) => {
-            const valA = a[columnName];
-            const valB = b[columnName];
-
-            if (valA === valB) return 0;
-            if (valA === null || valA === undefined) return 1;
-            if (valB === null || valB === undefined) return -1;
-
-            if (typeof valA === 'number' && typeof valB === 'number') {
-                return direction === 'asc' ? valA - valB : valB - valA;
+            const vA = a[columnName];
+            const vB = b[columnName];
+            if (vA === vB) return 0;
+            if (vA === null || vA === undefined) return 1;
+            if (vB === null || vB === undefined) return -1;
+            if (typeof vA === 'number' && typeof vB === 'number') {
+                return direction === 'asc' ? vA - vB : vB - vA;
             }
             return direction === 'asc'
-                ? String(valA).localeCompare(String(valB))
-                : String(valB).localeCompare(String(valA));
+                ? String(vA).localeCompare(String(vB))
+                : String(vB).localeCompare(String(vA));
         });
 
-        renderTableRows(state.currentResultData.rows, state.currentResultData.columns);
+        renderRows(state.currentResultData.rows, state.currentResultData.columns);
     }
 
     // -------------------------------------------------------------------------
-    // EXPORT UTILITIES (CSV / JSON)
+    // EXPORT FUNCTIONS (CSV / JSON)
     // -------------------------------------------------------------------------
-    function exportToCsv() {
+    function exportCsv() {
         const { columns, rows } = state.currentResultData;
         if (!rows || rows.length === 0) {
-            showToast('No data to export.', 'info');
+            showToast('No records to export.', 'info');
             return;
         }
 
-        const headerRow = columns.map(c => `"${c.replace(/"/g, '""')}"`).join(',');
-        const dataRows = rows.map(r => {
+        const header = columns.map(c => `"${c.replace(/"/g, '""')}"`).join(',');
+        const body = rows.map(r => {
             return columns.map(c => {
                 const val = r[c] !== null && r[c] !== undefined ? String(r[c]) : '';
                 return `"${val.replace(/"/g, '""')}"`;
             }).join(',');
-        });
+        }).join('\n');
 
-        const csvContent = [headerRow, ...dataRows].join('\n');
-        downloadFile(csvContent, 'neoassist_export.csv', 'text/csv');
+        downloadBlob(`${header}\n${body}`, 'neoassist_export.csv', 'text/csv');
         showToast('Exported dataset to CSV!', 'success');
     }
 
-    function exportToJson() {
+    function exportJson() {
         const { rows } = state.currentResultData;
         if (!rows || rows.length === 0) {
-            showToast('No data to export.', 'info');
+            showToast('No records to export.', 'info');
             return;
         }
 
-        const jsonContent = JSON.stringify(rows, null, 2);
-        downloadFile(jsonContent, 'neoassist_export.json', 'application/json');
+        const jsonStr = JSON.stringify(rows, null, 2);
+        downloadBlob(jsonStr, 'neoassist_export.json', 'application/json');
         showToast('Exported dataset to JSON!', 'success');
     }
 
-    function downloadFile(content, fileName, mimeType) {
-        const blob = new Blob([content], { type: mimeType });
+    function downloadBlob(content, filename, type) {
+        const blob = new Blob([content], { type: type });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = fileName;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -713,20 +570,17 @@
     }
 
     // -------------------------------------------------------------------------
-    // COPY TO CLIPBOARD
+    // COPY SQL
     // -------------------------------------------------------------------------
-    function copySqlToClipboard() {
-        const sql = elements.sqlCodeBlock.innerText;
-        if (!sql) return;
-
-        navigator.clipboard.writeText(sql).then(() => {
+    function copySql() {
+        const text = elements.sqlCodeBlock.innerText;
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
             elements.copyBtnText.textContent = 'Copied!';
-            elements.copyIcon.className = 'fa-solid fa-check text-success';
             showToast('SQL copied to clipboard!', 'success');
             setTimeout(() => {
                 elements.copyBtnText.textContent = 'Copy SQL';
-                elements.copyIcon.className = 'fa-regular fa-copy';
-            }, 2000);
+            }, 1800);
         }).catch(() => {
             showToast('Failed to copy to clipboard.', 'error');
         });
@@ -745,20 +599,14 @@
 
             if (data.success) {
                 showToast(data.message, 'success');
-                playAudioTone('success');
                 elements.resetModal.classList.remove('show');
-                
-                // Clear UI state
                 state.currentResultData = { columns: [], rows: [] };
                 renderDataTable(state.currentResultData);
-                
                 elements.sqlCodeBlock.innerHTML = '-- Database reset to 0 tables (Empty state).\n-- Ready for autonomous schema synthesis.';
                 elements.queryTypeBadge.textContent = 'RESET';
-                elements.queryLatencyBadge.innerHTML = '<i class="fa-solid fa-clock"></i> 0.0 ms';
-                elements.queryRowBadge.innerHTML = '<i class="fa-solid fa-layer-group"></i> 0 rows';
-                elements.insightsContent.textContent = 'Database cleanly wiped to zero-config state. Enter your first prompt to generate tables dynamically.';
-
-                // Update Schema
+                elements.latencyBadge.innerHTML = '<i class="fa-solid fa-clock"></i> 0.0 ms';
+                elements.rowsBadge.innerHTML = '<i class="fa-solid fa-table-list"></i> 0 rows';
+                elements.explanationText.textContent = 'Database cleanly wiped to zero-config state. Enter your first prompt to generate tables dynamically.';
                 fetchSchema();
             } else {
                 showToast(`Reset error: ${data.error}`, 'error');
@@ -767,22 +615,20 @@
             showToast(`Reset failed: ${e.message}`, 'error');
         } finally {
             elements.confirmResetBtn.disabled = false;
-            elements.confirmResetBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i> Confirm Reset (0 Tables)';
+            elements.confirmResetBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i> Confirm Reset';
         }
     }
 
     // -------------------------------------------------------------------------
-    // GEMINI API KEY MODAL
+    // GEMINI KEY MODAL
     // -------------------------------------------------------------------------
     function setupApiKeyModal() {
-        const storedKey = localStorage.getItem('neoassist_gemini_key') || '';
-        if (storedKey) {
-            elements.geminiKeyInput.value = storedKey;
-        }
+        const savedKey = localStorage.getItem('neoassist_gemini_key') || '';
+        if (savedKey) elements.geminiKeyInput.value = savedKey;
 
         elements.apiKeyModalBtn.addEventListener('click', () => {
             elements.apiKeyModal.classList.add('show');
-            elements.keyModalStatus.style.display = 'none';
+            elements.keyStatusFeedback.style.display = 'none';
         });
 
         elements.closeApiKeyModalBtn.addEventListener('click', () => {
@@ -793,21 +639,17 @@
             elements.apiKeyModal.classList.remove('show');
         });
 
-        elements.toggleKeyVisibility.addEventListener('click', () => {
-            if (elements.geminiKeyInput.type === 'password') {
-                elements.geminiKeyInput.type = 'text';
-                elements.keyVisIcon.className = 'fa-regular fa-eye-slash';
-            } else {
-                elements.geminiKeyInput.type = 'password';
-                elements.keyVisIcon.className = 'fa-regular fa-eye';
-            }
+        elements.toggleKeyVisBtn.addEventListener('click', () => {
+            const isPass = elements.geminiKeyInput.type === 'password';
+            elements.geminiKeyInput.type = isPass ? 'text' : 'password';
+            elements.keyVisIcon.className = isPass ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
         });
 
         elements.saveApiKeyBtn.addEventListener('click', async () => {
             const key = elements.geminiKeyInput.value.trim();
             if (!key) {
-                elements.keyModalStatus.className = 'modal-status-msg error';
-                elements.keyModalStatus.textContent = 'Please enter a valid key or cancel.';
+                elements.keyStatusFeedback.className = 'modal-feedback error';
+                elements.keyStatusFeedback.textContent = 'Please enter an API key.';
                 return;
             }
 
@@ -821,25 +663,19 @@
                     body: JSON.stringify({ api_key: key })
                 });
                 const data = await res.json();
-
                 if (data.success) {
                     localStorage.setItem('neoassist_gemini_key', key);
-                    elements.keyModalStatus.className = 'modal-status-msg success';
-                    elements.keyModalStatus.textContent = data.message;
-                    showToast('Gemini API Key connected successfully!', 'success');
-                    elements.aiModelText.textContent = 'Gemini 1.5 Flash';
-                    elements.aiModelBadge.classList.add('active-pill');
-
-                    setTimeout(() => {
-                        elements.apiKeyModal.classList.remove('show');
-                    }, 1200);
+                    elements.keyStatusFeedback.className = 'modal-feedback success';
+                    elements.keyStatusFeedback.textContent = data.message;
+                    showToast('Gemini API Key configured successfully!', 'success');
+                    setTimeout(() => elements.apiKeyModal.classList.remove('show'), 1000);
                 } else {
-                    elements.keyModalStatus.className = 'modal-status-msg error';
-                    elements.keyModalStatus.textContent = data.error || 'Failed to verify API key.';
+                    elements.keyStatusFeedback.className = 'modal-feedback error';
+                    elements.keyStatusFeedback.textContent = data.error || 'Verification failed.';
                 }
             } catch (err) {
-                elements.keyModalStatus.className = 'modal-status-msg error';
-                elements.keyModalStatus.textContent = `Network error: ${err.message}`;
+                elements.keyStatusFeedback.className = 'modal-feedback error';
+                elements.keyStatusFeedback.textContent = `Network error: ${err.message}`;
             } finally {
                 elements.saveApiKeyBtn.disabled = false;
                 elements.saveApiKeyBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save & Verify Key';
@@ -848,11 +684,11 @@
     }
 
     // -------------------------------------------------------------------------
-    // UTILITIES & EVENT BINDINGS
+    // UTILS & LISTENERS
     // -------------------------------------------------------------------------
-    function autoExpandTextarea(textarea) {
-        textarea.style.height = 'auto';
-        textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+    function autoResizeTextarea(el) {
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 120) + 'px';
     }
 
     function escapeHtml(str) {
@@ -866,88 +702,48 @@
     }
 
     function bindEvents() {
-        // Execute button & input hotkeys
         elements.executeBtn.addEventListener('click', executeQuery);
-        
         elements.promptInput.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
                 executeQuery();
             } else if (e.key === 'Enter' && !e.shiftKey) {
-                // If single-line prompt, execute on enter
                 e.preventDefault();
                 executeQuery();
             }
         });
+        elements.promptInput.addEventListener('input', () => autoResizeTextarea(elements.promptInput));
 
-        elements.promptInput.addEventListener('input', () => {
-            autoExpandTextarea(elements.promptInput);
-        });
-
-        // Mic button
         elements.micBtn.addEventListener('click', toggleListening);
         elements.voiceCancelBtn.addEventListener('click', stopListening);
+        elements.copySqlBtn.addEventListener('click', copySql);
+        elements.exportCsvBtn.addEventListener('click', exportCsv);
+        elements.exportJsonBtn.addEventListener('click', exportJson);
 
-        // Copy SQL
-        elements.copySqlBtn.addEventListener('click', copySqlToClipboard);
-
-        // Export Buttons
-        elements.exportCsvBtn.addEventListener('click', exportToCsv);
-        elements.exportJsonBtn.addEventListener('click', exportToJson);
-
-        // Filter result set
         elements.tableFilterInput.addEventListener('input', () => {
-            renderTableRows(state.currentResultData.rows, state.currentResultData.columns);
+            renderRows(state.currentResultData.rows, state.currentResultData.columns);
         });
 
-        // Sidebar search
         elements.schemaSearchInput.addEventListener('input', () => {
             renderSchemaTree(state.currentSchema);
         });
 
-        // Sidebar refresh
         elements.refreshSchemaBtn.addEventListener('click', fetchSchema);
 
-        // Preset chips
-        elements.presetChipsContainer.querySelectorAll('.preset-chip').forEach(chip => {
-            chip.addEventListener('click', () => {
-                const promptText = chip.getAttribute('data-prompt');
-                elements.promptInput.value = promptText;
-                autoExpandTextarea(elements.promptInput);
-                elements.directSqlToggle.checked = false;
-                executeQuery();
-            });
-        });
-
-        // Reset DB modal triggers
-        elements.resetDbBtn.addEventListener('click', () => {
-            elements.resetModal.classList.add('show');
-        });
-        elements.closeResetModalBtn.addEventListener('click', () => {
-            elements.resetModal.classList.remove('show');
-        });
-        elements.cancelResetBtn.addEventListener('click', () => {
-            elements.resetModal.classList.remove('show');
-        });
+        // Reset Modal
+        elements.resetDbBtn.addEventListener('click', () => elements.resetModal.classList.add('show'));
+        elements.closeResetModalBtn.addEventListener('click', () => elements.resetModal.classList.remove('show'));
+        elements.cancelResetBtn.addEventListener('click', () => elements.resetModal.classList.remove('show'));
         elements.confirmResetBtn.addEventListener('click', resetDatabase);
 
-        // Audio toggle
-        elements.audioToggleBtn.addEventListener('click', () => {
-            state.soundEnabled = !state.soundEnabled;
-            elements.audioToggleIcon.className = state.soundEnabled ? 'fa-solid fa-volume-high' : 'fa-solid fa-volume-xmark';
-            showToast(state.soundEnabled ? 'Audio feedback enabled' : 'Audio feedback muted', 'info');
-        });
-
-        // Direct SQL toggle label update
+        // Direct SQL toggle placeholder update
         elements.directSqlToggle.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                elements.promptInput.placeholder = 'Enter raw SQL (e.g. SELECT * FROM employees; or CREATE TABLE ...)';
-            } else {
-                elements.promptInput.placeholder = "Speak or type a command... (e.g. 'Add an employee Sarah in Finance with salary 95000')";
-            }
+            elements.promptInput.placeholder = e.target.checked
+                ? 'Enter raw SQLite statement (e.g. SELECT * FROM employees; or CREATE TABLE ...)'
+                : "Speak or type your database instruction... (e.g. 'Add an employee Sarah in Finance with salary 95000')";
         });
 
-        // Close modals on Escape key
+        // Esc key closes modals
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 elements.apiKeyModal.classList.remove('show');
@@ -957,18 +753,13 @@
         });
     }
 
-    // -------------------------------------------------------------------------
-    // INITIALIZATION
-    // -------------------------------------------------------------------------
     function init() {
-        console.log('NeoAssist AI Engine Initializing...');
         initSpeechRecognition();
         setupApiKeyModal();
         bindEvents();
         fetchSchema();
     }
 
-    // Start on DOM ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {

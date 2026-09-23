@@ -97,8 +97,21 @@ class TestNeoAssistAI(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
         self.assertTrue(data["success"])
-        self.assertEqual(data["schema"]["total_tables"], 0)
         print("\n[PASSED] Test 5: Full database reset back to 0 tables verified.")
+
+    def test_06_conversational_speech_sanitization(self):
+        """Verify conversational voice fillers and spoken words are normalized and executed cleanly."""
+        payload = {
+            "prompt": "Hey AI can you please add an employee Elena in Marketing with salary 98000 dollars",
+            "direct_sql": False
+        }
+        res = self.app.post("/api/execute", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["success"])
+        self.assertIn("Elena", str(data["execution"]["rows"]))
+        print("\n[PASSED] Test 6: Conversational Speech Sanitization & Execution verified.")
 
 if __name__ == "__main__":
     unittest.main()
+

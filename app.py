@@ -29,45 +29,89 @@ else:
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-# Optional Gemini setup
+# Optional Gemini client
 genai = None
 try:
     import google.generativeai as genai_module
     genai = genai_module
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
-        logger.info("Google Generative AI configured successfully with GEMINI_API_KEY.")
+        logger.info("Google Generative AI configured successfully.")
 except Exception as e:
-    logger.warning(f"Google Generative AI module initialization notice: {e}")
+    logger.warning(f"Google Generative AI module note: {e}")
+
+def init_db():
+    """Initializes the database file cleanly in an empty state (0 tables)."""
+    parent_dir = os.path.dirname(DB_PATH)
+    if parent_dir and not os.path.exists(parent_dir):
+        os.makedirs(parent_dir, exist_ok=True)
+    if not os.path.exists(DB_PATH):
+        conn = sqlite3.connect(DB_PATH)
+        conn.close()
+        logger.info(f"Initialized clean SQLite database at {DB_PATH}")
+
+init_db()
 
 def get_db_connection():
-    """Returns a SQLite connection configured with Row factory."""
+    """Returns a SQLite connection configured with Row factory and foreign keys."""
     init_db()
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
-def init_db():
-    """Initializes the database.db file cleanly in an empty state (0 tables)."""
-    if not os.path.exists(DB_PATH):
-        parent_dir = os.path.dirname(DB_PATH)
-        if parent_dir:
-            os.makedirs(parent_dir, exist_ok=True)
-        conn = sqlite3.connect(DB_PATH)
-        conn.close()
-        logger.info(f"Initialized clean empty SQLite database at {DB_PATH}")
-
-init_db()
-
-def introspect_schema():
+# -----------------------------------------------------------------------------
+# 1. PRE-LLM SPEECH & NATURAL LANGUAGE SANITIZATION
+# -----------------------------------------------------------------------------
+def sanitize_natural_prompt(raw_prompt: str) -> str:
     """
-    Introspects the live SQLite database by querying sqlite_master and PRAGMA table_info.
-    Returns complete structured schema information.
+    Cleanses voice transcription noise, polite conversational prefixes, filler words,
+    and colloquial phrasing to distill core database intent.
+    """
+    if not raw_prompt:
+        return ""
+
+    text = raw_prompt.strip()
+
+    # Normalize voice transcription spoken symbols/words
+    spoken_replacements = [
+        (r"\b(dollars?|bucks?)\b", "$"),
+        (r"\bpercents?\b", "%"),
+        (r"\bdot com\b", ".com"),
+        (r"\bat sign\b", "@"),
+        (r"\be-mail\b", "email"),
+    ]
+    for pattern, repl in spoken_replacements:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+
+    # Conversational greetings and polite request filler patterns
+    filler_patterns = [
+        r"^(?:hey|hello|hi|okay|ok|yo)\s+(?:neo|assist|neoassist|ai|bot|assistant|system)?\s*[,!.:-]*\s*",
+        r"^(?:can\s+you\s+(?:please\s+)?|could\s+you\s+(?:please\s+)?|would\s+you\s+(?:please\s+)?|please\s+)",
+        r"^(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to\s+)",
+        r"^(?:help\s+me\s+(?:to\s+)?|tell\s+me\s+(?:to\s+)?|go\s+ahead\s+and\s+)",
+        r"^(?:i'd\s+like\s+to\s+|let's\s+|let\s+us\s+)",
+        r"\b(?:um|uh|er|ah|like|you\s+know|basically|actually|alright)\b",
+    ]
+
+    for pat in filler_patterns:
+        text = re.sub(pat, "", text, flags=re.IGNORECASE).strip()
+
+    # Clean double spaces and punctuation anomalies
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+# -----------------------------------------------------------------------------
+# 2. RUNTIME DATABASE INTROSPECTION
+# -----------------------------------------------------------------------------
+def introspect_schema() -> dict:
+    """
+    Inspects sqlite_master and PRAGMA table_info at runtime.
+    Returns dynamic metadata of all active tables, columns, constraints, and row counts.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     schema_info = {
         "tables": [],
         "total_tables": 0,
@@ -75,34 +119,32 @@ def introspect_schema():
         "total_rows": 0,
         "raw_ddl": ""
     }
-    
+
     try:
         cursor.execute(
             "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name ASC;"
         )
         tables = cursor.fetchall()
-        
         all_ddl = []
+
         for table in tables:
             t_name = table["name"]
             t_sql = table["sql"] or ""
             all_ddl.append(t_sql)
-            
-            # Fetch column info
+
             cursor.execute(f"PRAGMA table_info(\"{t_name}\");")
-            columns_data = cursor.fetchall()
-            
-            # Fetch row count
+            cols_data = cursor.fetchall()
+
             cursor.execute(f"SELECT COUNT(*) as count FROM \"{t_name}\";")
             row_count = cursor.fetchone()["count"]
             schema_info["total_rows"] += row_count
-            
-            # Fetch up to 3 preview sample rows
+
+            # Fetch preview sample rows
             cursor.execute(f"SELECT * FROM \"{t_name}\" LIMIT 3;")
             sample_rows = [dict(r) for r in cursor.fetchall()]
-            
+
             columns = []
-            for col in columns_data:
+            for col in cols_data:
                 columns.append({
                     "cid": col["cid"],
                     "name": col["name"],
@@ -112,7 +154,7 @@ def introspect_schema():
                     "pk": bool(col["pk"])
                 })
                 schema_info["total_columns"] += 1
-                
+
             schema_info["tables"].append({
                 "name": t_name,
                 "sql": t_sql,
@@ -120,56 +162,81 @@ def introspect_schema():
                 "row_count": row_count,
                 "sample_rows": sample_rows
             })
-            
+
         schema_info["total_tables"] = len(schema_info["tables"])
         schema_info["raw_ddl"] = "\n\n".join(all_ddl)
     except Exception as e:
-        logger.error(f"Error during schema introspection: {e}")
+        logger.error(f"Schema introspection error: {e}")
     finally:
         conn.close()
-        
+
     return schema_info
 
 def clean_sql_output(raw_output: str) -> str:
-    """Strips markdown code blocks, backticks, and extra whitespace from generated SQL."""
+    """Strips markdown code blocks and backticks from generated SQL."""
     cleaned = raw_output.strip()
-    # Match ```sql ... ``` or ``` ... ```
     match = re.search(r"```(?:sql)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE)
     if match:
         cleaned = match.group(1).strip()
     else:
-        # Strip single backticks if wrapped
         cleaned = re.sub(r"^`+|`+$", "", cleaned).strip()
     return cleaned
 
+# -----------------------------------------------------------------------------
+# 3. DYNAMIC AUTONOMOUS ENGINE (FALLBACK & ZERO-KEY RUNNER)
+# -----------------------------------------------------------------------------
 def autonomous_heuristic_engine(prompt: str, schema_info: dict) -> dict:
     """
-    Intelligent autonomous fallback rule engine that parses natural language intent,
-    inspects existing schema, and generates clean DDL, DML, or DQL when Gemini API is
-    not yet configured or when handling common data patterns.
+    Autonomous rule & pattern engine that dynamically handles DDL synthesis, DML,
+    and analytical DQL even when no Gemini API key is configured.
     """
-    p_lower = prompt.strip().lower()
+    clean_prompt = sanitize_natural_prompt(prompt)
+    p_lower = clean_prompt.lower()
     tables = {t["name"].lower(): t for t in schema_info["tables"]}
-    
-    # Check if user directly provided raw SQL
-    if re.match(r"^\s*(SELECT|INSERT|CREATE|UPDATE|DELETE|DROP|ALTER|PRAGMA)\b", prompt, re.IGNORECASE):
-        cleaned_sql = prompt.strip()
-        q_type = "DQL" if cleaned_sql.upper().startswith("SELECT") else ("DDL" if "CREATE" in cleaned_sql.upper() or "DROP" in cleaned_sql.upper() else "DML")
+
+    # Direct SQL
+    if re.match(r"^\s*(SELECT|INSERT|CREATE|UPDATE|DELETE|DROP|ALTER|PRAGMA|WITH)\b", clean_prompt, re.IGNORECASE):
+        q_type = "DQL" if re.match(r"^\s*(SELECT|WITH|PRAGMA)", clean_prompt, re.IGNORECASE) else (
+            "DDL" if re.search(r"\b(CREATE|DROP|ALTER)\b", clean_prompt, re.IGNORECASE) else "DML"
+        )
         return {
-            "sql": cleaned_sql,
-            "explanation": "Direct SQL statement provided by user.",
+            "sql": clean_prompt,
+            "explanation": "Executed direct SQL statement provided by user.",
             "query_type": q_type,
-            "insights": "Executed raw user-supplied SQL statement.",
             "source": "Direct SQL"
         }
 
-    # Pattern 1: Add an employee Sarah in Finance with salary 95000
-    emp_match = re.search(r"add (?:an? )?employee\s+([A-Za-z]+)\s+(?:in|to)?\s*([A-Za-z\s]+?)\s+(?:with (?:a )?salary (?:of )?\$?([0-9,.]+))", prompt, re.IGNORECASE)
+    # Pattern: Show/List all tables
+    if any(q in p_lower for q in ["show tables", "list tables", "what tables", "show all tables", "view tables", "display tables"]):
+        return {
+            "sql": "SELECT name as table_name, type, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';",
+            "explanation": "Queried sqlite_master to inspect all registered database tables.",
+            "query_type": "DQL",
+            "source": "Autonomous Engine"
+        }
+
+    # Pattern: Drop/Delete table
+    drop_match = re.search(r"(?:drop|delete|remove)\s+(?:table\s+)?([A-Za-z0-9_]+)", clean_prompt, re.IGNORECASE)
+    if drop_match and "table" in p_lower:
+        tbl_candidate = drop_match.group(1).lower()
+        matched = next((name for name in tables if name == tbl_candidate or name == tbl_candidate + "s"), tbl_candidate)
+        return {
+            "sql": f"DROP TABLE IF EXISTS \"{matched}\";",
+            "explanation": f"Dropped table '{matched}' from the database.",
+            "query_type": "DDL",
+            "source": "Autonomous Engine"
+        }
+
+    # Pattern: Add/Insert Record into Table (e.g. "Add an employee Sarah in Finance with salary 95000")
+    emp_match = re.search(
+        r"(?:add|insert|create|record)\s+(?:an?\s+)?employee\s+([A-Za-z]+)\s+(?:in|to)?\s*([A-Za-z\s]+?)\s+(?:with\s+(?:a\s+)?salary\s+(?:of\s+)?\$?([0-9,.]+))",
+        clean_prompt,
+        re.IGNORECASE
+    )
     if emp_match:
         name = emp_match.group(1).strip()
         dept = emp_match.group(2).strip().title()
         salary = float(emp_match.group(3).replace(",", ""))
-        
         sql_parts = []
         if "employees" not in tables:
             sql_parts.append("""CREATE TABLE IF NOT EXISTS employees (
@@ -181,43 +248,18 @@ def autonomous_heuristic_engine(prompt: str, schema_info: dict) -> dict:
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );""")
         sql_parts.append(f"INSERT INTO employees (name, department, salary) VALUES ('{name}', '{dept}', {salary});")
-        sql_parts.append("SELECT * FROM employees ORDER BY id DESC LIMIT 10;")
+        sql_parts.append("SELECT * FROM employees ORDER BY id DESC LIMIT 25;")
         return {
             "sql": "\n".join(sql_parts),
-            "explanation": f"Created the 'employees' table (if absent) and inserted {name} ({dept}) with salary ${salary:,.2f}.",
+            "explanation": f"Created 'employees' table (if needed) and inserted record for {name} ({dept}) with salary ${salary:,.2f}.",
             "query_type": "HYBRID" if "employees" not in tables else "DML",
-            "insights": f"Employee {name} recorded in {dept} department.",
-            "source": "Autonomous Heuristic"
+            "source": "Autonomous Engine"
         }
 
-    # Pattern 2: Add customer / client
-    cust_match = re.search(r"add (?:a )?customer\s+([A-Za-z\s]+?)\s+(?:with email\s+([^\s]+))?\s*(?:with|and)?\s*(?:balance\s+\$?([0-9,.]+))?", prompt, re.IGNORECASE)
-    if cust_match and ("customer" in p_lower or "client" in p_lower):
-        c_name = cust_match.group(1).strip().title()
-        email = cust_match.group(2) or f"{c_name.lower().replace(' ', '.')}@example.com"
-        bal = float(cust_match.group(3).replace(",", "")) if cust_match.group(3) else 100.0
-        sql_parts = []
-        if "customers" not in tables:
-            sql_parts.append("""CREATE TABLE IF NOT EXISTS customers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    balance REAL DEFAULT 0.0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);""")
-        sql_parts.append(f"INSERT INTO customers (name, email, balance) VALUES ('{c_name}', '{email}', {bal});")
-        sql_parts.append("SELECT * FROM customers ORDER BY id DESC LIMIT 10;")
-        return {
-            "sql": "\n".join(sql_parts),
-            "explanation": f"Created 'customers' table (if absent) and registered customer {c_name} with balance ${bal:,.2f}.",
-            "query_type": "HYBRID" if "customers" not in tables else "DML",
-            "insights": f"Customer account {c_name} created with email {email}.",
-            "source": "Autonomous Heuristic"
-        }
-
-    # Pattern 3: Create table products / items / orders
-    if "create" in p_lower and "product" in p_lower:
-        sql = """CREATE TABLE IF NOT EXISTS products (
+    # Pattern: Products catalog creation & insertion
+    if "product" in p_lower and ("create" in p_lower or "add" in p_lower or "catalog" in p_lower):
+        if "products" not in tables:
+            sql = """CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     product_name TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -225,23 +267,23 @@ def autonomous_heuristic_engine(prompt: str, schema_info: dict) -> dict:
     stock_quantity INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-INSERT INTO products (product_name, category, price, stock_quantity) VALUES 
+INSERT INTO products (product_name, category, price, stock_quantity) VALUES
 ('Quantum Laptop X', 'Electronics', 1499.99, 45),
 ('Ergonomic Mesh Chair', 'Furniture', 349.50, 80),
 ('Noise-Cancelling Headphones', 'Audio', 199.99, 120),
 ('USB-C 100W Docking Hub', 'Accessories', 89.00, 210);
 SELECT * FROM products;"""
-        return {
-            "sql": sql,
-            "explanation": "Created 'products' table with inventory attributes and seeded initial catalog items.",
-            "query_type": "HYBRID",
-            "insights": "Product catalog initialized with 4 baseline items across multiple categories.",
-            "source": "Autonomous Heuristic"
-        }
+            return {
+                "sql": sql,
+                "explanation": "Created 'products' table and populated baseline catalog records.",
+                "query_type": "HYBRID",
+                "source": "Autonomous Engine"
+            }
 
-    # Pattern 4: Create table sales / transactions
-    if "create" in p_lower and ("sale" in p_lower or "order" in p_lower or "transaction" in p_lower):
-        sql = """CREATE TABLE IF NOT EXISTS orders (
+    # Pattern: Orders & sales table creation
+    if ("order" in p_lower or "sale" in p_lower or "purchase" in p_lower) and ("create" in p_lower or "add" in p_lower):
+        if "orders" not in tables:
+            sql = """CREATE TABLE IF NOT EXISTS orders (
     order_id INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_name TEXT NOT NULL,
     product_name TEXT NOT NULL,
@@ -256,31 +298,41 @@ INSERT INTO orders (customer_name, product_name, quantity, unit_price) VALUES
 ('Apex Solutions', 'Ergonomic Mesh Chair', 2, 349.50),
 ('Hyperion Tech', 'USB-C 100W Docking Hub', 10, 89.00);
 SELECT * FROM orders;"""
+            return {
+                "sql": sql,
+                "explanation": "Created 'orders' table with computed column and inserted initial sales data.",
+                "query_type": "HYBRID",
+                "source": "Autonomous Engine"
+            }
+
+    # Pattern: Generic entity dynamic creation (e.g. "Create a table for users with name and email")
+    create_match = re.search(r"create\s+(?:a\s+)?table\s+(?:for\s+)?([A-Za-z0-9_]+)", clean_prompt, re.IGNORECASE)
+    if create_match:
+        raw_tbl = create_match.group(1).lower()
+        tbl_name = raw_tbl if raw_tbl.endswith("s") else raw_tbl + "s"
+        sql = f"""CREATE TABLE IF NOT EXISTS {tbl_name} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'Active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+INSERT INTO {tbl_name} (name, description) VALUES ('Initial {raw_tbl.title()}', 'Default synthesized record');
+SELECT * FROM {tbl_name};"""
         return {
             "sql": sql,
-            "explanation": "Created 'orders' table with computed column total_amount and inserted 4 initial orders.",
+            "explanation": f"Synthesized '{tbl_name}' table schema with primary key and default record.",
             "query_type": "HYBRID",
-            "insights": "Orders schema generated with automatic financial calculation logic.",
-            "source": "Autonomous Heuristic"
+            "source": "Autonomous Engine"
         }
 
-    # Pattern 5: Show all / List all tables
-    if any(q in p_lower for q in ["show tables", "list tables", "what tables", "show all tables", "view tables"]):
-        return {
-            "sql": "SELECT name as table_name, type, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';",
-            "explanation": "Queries sqlite_master to list all registered user tables in the database.",
-            "query_type": "DQL",
-            "insights": f"Currently {len(tables)} user tables present in database.",
-            "source": "Autonomous Heuristic"
-        }
-
-    # Pattern 6: Queries targeting existing tables or matching column names
+    # Pattern: Queries targeting existing tables
     target_table = None
     for t_name, t_info in tables.items():
         if t_name in p_lower or (t_name.rstrip("s") in p_lower and len(t_name) > 3):
             target_table = (t_name, t_info)
             break
-        # Also check if multiple columns match prompt
+        # Match if table columns appear in prompt
         matching_cols = [c["name"].lower() for c in t_info["columns"] if c["name"].lower() in p_lower]
         if len(matching_cols) >= 2:
             target_table = (t_name, t_info)
@@ -288,53 +340,70 @@ SELECT * FROM orders;"""
 
     if target_table:
         t_name, t_info = target_table
-        # Check for aggregations: average, sum, count, group by
-        if "average" in p_lower or "avg" in p_lower:
+
+        # Aggregations: Average, Avg, Count, Sum, Max, Min
+        if any(w in p_lower for w in ["average", "avg", "mean", "sum", "total", "count", "maximum", "max", "minimum", "min"]):
             num_cols = [c["name"] for c in t_info["columns"] if c["type"].upper() in ["REAL", "INTEGER", "NUMERIC", "FLOAT"] and not c["pk"]]
             cat_cols = [c["name"] for c in t_info["columns"] if c["type"].upper() in ["TEXT", "VARCHAR", "STRING"]]
-            
-            # Prioritize columns explicitly mentioned in the prompt
+
             mentioned_num = [c for c in num_cols if c.lower() in p_lower]
             mentioned_cat = [c for c in cat_cols if c.lower() in p_lower]
-            
+
             target_num = mentioned_num[0] if mentioned_num else (num_cols[0] if num_cols else "*")
             target_cat = mentioned_cat[0] if mentioned_cat else (cat_cols[0] if cat_cols else None)
-            
-            if target_cat and target_num != "*":
-                sql = f"SELECT {target_cat}, COUNT(*) as total_records, ROUND(AVG({target_num}), 2) as avg_{target_num} FROM \"{t_name}\" GROUP BY {target_cat} ORDER BY avg_{target_num} DESC;"
+
+            if "average" in p_lower or "avg" in p_lower:
+                if target_cat and target_num != "*":
+                    sql = f"SELECT {target_cat}, COUNT(*) as total_records, ROUND(AVG({target_num}), 2) as avg_{target_num} FROM \"{t_name}\" GROUP BY {target_cat} ORDER BY avg_{target_num} DESC;"
+                else:
+                    sql = f"SELECT ROUND(AVG({target_num}), 2) as avg_{target_num} FROM \"{t_name}\";"
                 return {
                     "sql": sql,
-                    "explanation": f"Calculated average {target_num} and count grouped by {target_cat} for table '{t_name}'.",
+                    "explanation": f"Calculated average {target_num} for table '{t_name}'.",
                     "query_type": "DQL",
-                    "insights": f"Aggregated {t_name} data across {target_cat}.",
-                    "source": "Autonomous Heuristic"
-                }
-            
-            # Show highest / maximum / top
-            if "highest" in p_lower or "top" in p_lower or "max" in p_lower or "most" in p_lower:
-                num_cols = [c["name"] for c in t_info["columns"] if c["type"].upper() in ["REAL", "INTEGER", "NUMERIC", "FLOAT"]]
-                order_col = num_cols[0] if num_cols else t_info["columns"][0]["name"]
-                sql = f"SELECT * FROM {t_name} ORDER BY {order_col} DESC LIMIT 5;"
-                return {
-                    "sql": sql,
-                    "explanation": f"Retrieved top records from '{t_name}' sorted descending by '{order_col}'.",
-                    "query_type": "DQL",
-                    "insights": f"Highest values in {t_name} sorted by {order_col}.",
-                    "source": "Autonomous Heuristic"
+                    "source": "Autonomous Engine"
                 }
 
-            # Generic SELECT * FROM table
-            if any(w in p_lower for w in ["show", "list", "view", "get", "display", "all"]):
-                sql = f"SELECT * FROM {t_name} ORDER BY 1 ASC LIMIT 100;"
+            if "sum" in p_lower or "total" in p_lower:
+                sql = f"SELECT {target_cat + ', ' if target_cat else ''}ROUND(SUM({target_num}), 2) as total_{target_num} FROM \"{t_name}\" {f'GROUP BY {target_cat}' if target_cat else ''};"
                 return {
                     "sql": sql,
-                    "explanation": f"Selected all columns and up to 100 rows from '{t_name}'.",
+                    "explanation": f"Calculated total {target_num} for table '{t_name}'.",
                     "query_type": "DQL",
-                    "insights": f"Full dataset preview for table '{t_name}'.",
-                    "source": "Autonomous Heuristic"
+                    "source": "Autonomous Engine"
                 }
 
-    # Default fallback: If database is empty, generate a helpful initial multi-table enterprise schema
+            if "count" in p_lower:
+                sql = f"SELECT COUNT(*) as total_records FROM \"{t_name}\";"
+                return {
+                    "sql": sql,
+                    "explanation": f"Counted total records in table '{t_name}'.",
+                    "query_type": "DQL",
+                    "source": "Autonomous Engine"
+                }
+
+        # Sorting: highest, lowest, top, most
+        if any(w in p_lower for w in ["highest", "top", "max", "most", "best"]):
+            num_cols = [c["name"] for c in t_info["columns"] if c["type"].upper() in ["REAL", "INTEGER", "NUMERIC", "FLOAT"]]
+            order_col = num_cols[0] if num_cols else t_info["columns"][0]["name"]
+            sql = f"SELECT * FROM \"{t_name}\" ORDER BY {order_col} DESC LIMIT 10;"
+            return {
+                "sql": sql,
+                "explanation": f"Retrieved top records from '{t_name}' sorted descending by '{order_col}'.",
+                "query_type": "DQL",
+                "source": "Autonomous Engine"
+            }
+
+        # Generic SELECT all from matching table
+        sql = f"SELECT * FROM \"{t_name}\" LIMIT 100;"
+        return {
+            "sql": sql,
+            "explanation": f"Selected active records from table '{t_name}'.",
+            "query_type": "DQL",
+            "source": "Autonomous Engine"
+        }
+
+    # If database is completely empty and no table matched, bootstrap dynamically
     if not tables:
         sql = """CREATE TABLE IF NOT EXISTS employees (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -353,134 +422,131 @@ INSERT INTO employees (name, department, role, salary) VALUES
 SELECT * FROM employees;"""
         return {
             "sql": sql,
-            "explanation": f"The database is currently empty. Generated an initial 'employees' table and seeded 5 enterprise records to kickstart the system for '{prompt}'.",
+            "explanation": f"Synthesized initial 'employees' table and seeded enterprise records based on intent: '{clean_prompt}'.",
             "query_type": "HYBRID",
-            "insights": "Database initialized with core enterprise team schema.",
-            "source": "Autonomous Initialization"
+            "source": "Autonomous Engine"
         }
 
-    # Generic search across first available table
+    # Default query first table
     first_tbl = list(tables.keys())[0]
     return {
-        "sql": f"SELECT * FROM {first_tbl} LIMIT 25;",
-        "explanation": f"Displaying records from '{first_tbl}'.",
+        "sql": f"SELECT * FROM \"{first_tbl}\" LIMIT 50;",
+        "explanation": f"Retrieved records from '{first_tbl}'.",
         "query_type": "DQL",
-        "insights": f"Queried {first_tbl} table based on prompt context.",
-        "source": "Autonomous Heuristic"
+        "source": "Autonomous Engine"
     }
 
-def generate_sql_with_gemini(prompt: str, schema_info: dict, user_api_key: str = "") -> dict:
+# -----------------------------------------------------------------------------
+# 4. GEMINI API PROMPT & LLM GENERATION PIPELINE
+# -----------------------------------------------------------------------------
+def generate_sql_with_gemini(raw_prompt: str, schema_info: dict, user_api_key: str = "") -> dict:
     """
-    Sends the prompt along with the live SQLite schema context to Google Gemini API.
-    Expects structured JSON containing SQL, explanation, query_type, and insights.
+    Sanitizes natural language prompt and feeds current schema into Google Gemini API.
+    Enforces robust system instruction and returns structured JSON SQL payload.
     """
+    cleaned_prompt = sanitize_natural_prompt(raw_prompt)
     api_key = user_api_key or GEMINI_API_KEY
-    if not api_key:
-        logger.info("No Gemini API key available. Delegating to Autonomous Heuristic Engine.")
-        return autonomous_heuristic_engine(prompt, schema_info)
-        
-    if not genai:
-        logger.warning("google.generativeai module not loaded. Delegating to Autonomous Heuristic Engine.")
-        return autonomous_heuristic_engine(prompt, schema_info)
-        
+
+    if not api_key or not genai:
+        return autonomous_heuristic_engine(cleaned_prompt, schema_info)
+
     try:
         genai.configure(api_key=api_key)
-        
-        # Build prompt with rich schema context
+
+        # Build schema representation
         schema_summary = []
         for t in schema_info["tables"]:
             cols_desc = ", ".join([f"{c['name']} ({c['type']}{' PK' if c['pk'] else ''})" for c in t["columns"]])
             schema_summary.append(f"Table '{t['name']}' ({t['row_count']} rows):\n  Columns: {cols_desc}\n  DDL: {t['sql']}")
             if t["sample_rows"]:
-                schema_summary.append(f"  Sample Data: {json.dumps(t['sample_rows'][:2])}")
-                
+                schema_summary.append(f"  Sample: {json.dumps(t['sample_rows'][:2])}")
+
         schema_text = "\n\n".join(schema_summary) if schema_summary else "DATABASE IS CURRENTLY 100% EMPTY (0 tables exist)."
 
-        system_instruction = f"""You are NeoAssist AI, an elite autonomous SQL database architect and query engine for SQLite.
-Your job is to translate user natural language requests or voice prompts into valid, highly optimized, executable SQLite SQL queries.
+        system_instruction = f"""You are NeoAssist AI, an elite autonomous SQL database architect and query execution engine for SQLite.
+Your task is to convert natural language business queries, natural voice transcripts, and multi-sentence commands into valid, executable SQLite SQL queries.
 
-CURRENT DATABASE SCHEMA:
+CURRENT LIVE DATABASE SCHEMA:
 {schema_text}
 
-CRITICAL RULES:
-1. If the user asks to insert data into a table that DOES NOT exist yet, you MUST first generate `CREATE TABLE IF NOT EXISTS table_name (...);` with appropriate columns, types (INTEGER, TEXT, REAL, BOOLEAN, TIMESTAMP), primary keys, and sensible defaults, followed immediately by the `INSERT INTO` statement.
-2. If the user wants to view or query data, generate an optimized `SELECT` statement (using appropriate JOINs, WHERE, GROUP BY, ORDER BY, LIMIT).
-3. If the user asks for aggregations, use aliases (e.g., `avg_salary`, `total_revenue`, `record_count`).
-4. Ensure SQLite 3 compatibility (e.g. use `AUTOINCREMENT` only on `INTEGER PRIMARY KEY`).
-5. After DDL or DML statements (like INSERT or UPDATE), optionally include a `SELECT` statement to return the affected or latest rows so the user sees immediate visual feedback in the UI grid.
-6. Return YOUR RESPONSE ONLY as a valid JSON object matching this exact schema:
+CRITICAL EXECUTION RULES:
+1. Extract the core database intent regardless of polite phrases, conversational fillers, or voice transcription quirks.
+2. If the user mentions storing data for an entity or concept that does NOT currently exist in the database, you MUST generate a `CREATE TABLE IF NOT EXISTS table_name (...);` statement FIRST with appropriate column data types (INTEGER, TEXT, REAL, BOOLEAN, TIMESTAMP), primary keys, and auto-increment constraints, followed immediately by the corresponding `INSERT INTO` statement.
+3. If the user asks to delete, alter, or drop a table or record, formulate valid SQLite syntax and execute it directly.
+4. For data modifications (INSERT, UPDATE, DELETE), optionally append a `SELECT * FROM table_name ORDER BY 1 DESC LIMIT 25;` to return the updated data state.
+5. For aggregations and calculations, assign meaningful column aliases (e.g. `avg_salary`, `total_revenue`, `record_count`).
+6. Never fail due to slight sentence structure variations or voice transcription phrasing.
+7. Return YOUR RESPONSE ONLY as a raw, valid JSON object matching this schema (no markdown wrappers):
 {{
   "sql": "Executable SQLite query or multi-statement script separated by semicolons",
-  "explanation": "Clear 1-2 sentence human explanation of what the query accomplishes",
-  "query_type": "DDL | DML | DQL | HYBRID",
-  "insights": "Key business observations, metrics, or tips based on the data or action"
-}}
-Do NOT include any markdown code wrappers around the JSON. Output raw JSON only."""
+  "explanation": "Clear 1-2 sentence human explanation of the database operations performed",
+  "query_type": "DDL | DML | DQL | HYBRID"
+}}"""
 
-        # Attempt with popular Gemini models
         candidate_models = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
-        model = None
-        last_error = None
-        
         for m_name in candidate_models:
             try:
                 model = genai.GenerativeModel(m_name)
                 response = model.generate_content(
-                    f"{system_instruction}\n\nUSER PROMPT: {prompt}"
+                    f"{system_instruction}\n\nUSER PROMPT: {cleaned_prompt}"
                 )
                 if response and response.text:
                     raw_text = response.text.strip()
-                    # Strip any markdown json wrapper
                     json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw_text)
                     if json_match:
                         raw_text = json_match.group(1).strip()
-                    
                     data = json.loads(raw_text)
                     data["sql"] = clean_sql_output(data.get("sql", ""))
                     data["source"] = f"Gemini ({m_name})"
                     return data
             except Exception as ex:
-                last_error = ex
-                logger.warning(f"Model {m_name} failed: {ex}. Trying next...")
+                logger.warning(f"Gemini {m_name} attempt: {ex}")
                 continue
-                
-        logger.error(f"All Gemini models failed: {last_error}. Falling back to Autonomous Heuristic Engine.")
-        fallback_res = autonomous_heuristic_engine(prompt, schema_info)
-        fallback_res["source"] = "Autonomous Heuristic (API limit/error fallback)"
-        return fallback_res
+
+        # Fallback if API calls fail
+        fallback = autonomous_heuristic_engine(cleaned_prompt, schema_info)
+        fallback["source"] = "Autonomous Engine (API fallback)"
+        return fallback
 
     except Exception as e:
-        logger.error(f"Error communicating with Gemini: {e}")
-        return autonomous_heuristic_engine(prompt, schema_info)
+        logger.error(f"Gemini error: {e}")
+        return autonomous_heuristic_engine(cleaned_prompt, schema_info)
 
+# -----------------------------------------------------------------------------
+# 5. MULTI-STATEMENT TRANSACTION EXECUTION WRAPPER
+# -----------------------------------------------------------------------------
 def execute_sql_safely(sql_script: str) -> dict:
     """
-    Executes an SQL script safely inside a transaction on database.db.
-    Supports multi-statement scripts (CREATE TABLE, INSERT, SELECT).
-    Returns execution status, affected rows, columns, rows, execution time, and error messages.
+    Executes multi-statement SQL strings safely within an atomic transaction.
+    Wraps execution in BEGIN/COMMIT, auto-detects affected tables to return latest data,
+    and returns structured execution metrics.
     """
     start_time = time.perf_counter()
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     statements = [s.strip() for s in sql_script.split(";") if s.strip()]
     total_affected = 0
     columns = []
     rows = []
     executed_statements = []
-    
+    last_affected_table = None
+
     try:
-        # We process statements sequentially
         select_executed = False
-        
+
         for stmt in statements:
-            # Skip empty
             if not stmt:
                 continue
-                
+
             executed_statements.append(stmt)
             upper_stmt = stmt.upper().strip()
-            
+
+            # Track affected table name from DML/DDL
+            tbl_match = re.search(r"(?:INTO|FROM|TABLE|UPDATE)\s+[\"']?([A-Za-z0-9_]+)[\"']?", stmt, re.IGNORECASE)
+            if tbl_match:
+                last_affected_table = tbl_match.group(1)
+
             if upper_stmt.startswith("SELECT") or upper_stmt.startswith("PRAGMA") or upper_stmt.startswith("WITH"):
                 cursor.execute(stmt)
                 if cursor.description:
@@ -491,23 +557,19 @@ def execute_sql_safely(sql_script: str) -> dict:
             else:
                 cursor.execute(stmt)
                 total_affected += max(cursor.rowcount, 0)
-                
+
         conn.commit()
-        
-        # If statements were DML/DDL and no SELECT was in the script,
-        # let's automatically query the affected table so the user sees results
-        if not select_executed and statements:
-            last_stmt = statements[-1].upper()
-            table_match = re.search(r"(?:INTO|FROM|TABLE|UPDATE)\s+[\"']?([A-Za-z0-9_]+)[\"']?", statements[-1], re.IGNORECASE)
-            if table_match:
-                t_name = table_match.group(1)
-                try:
-                    cursor.execute(f"SELECT * FROM \"{t_name}\" ORDER BY 1 DESC LIMIT 50;")
-                    if cursor.description:
-                        columns = [d[0] for d in cursor.description]
-                        rows = [dict(r) for r in cursor.fetchall()]
-                except Exception:
-                    pass
+
+        # If DML or DDL executed and no SELECT was in the script,
+        # auto-fetch latest state of the affected table so UI displays records dynamically
+        if not select_executed and last_affected_table:
+            try:
+                cursor.execute(f"SELECT * FROM \"{last_affected_table}\" ORDER BY 1 DESC LIMIT 50;")
+                if cursor.description:
+                    columns = [d[0] for d in cursor.description]
+                    rows = [dict(r) for r in cursor.fetchall()]
+            except Exception:
+                pass
 
         execution_ms = round((time.perf_counter() - start_time) * 1000, 2)
         return {
@@ -523,7 +585,7 @@ def execute_sql_safely(sql_script: str) -> dict:
     except Exception as e:
         conn.rollback()
         execution_ms = round((time.perf_counter() - start_time) * 1000, 2)
-        logger.error(f"SQL Execution Error: {e} in SQL: {sql_script}")
+        logger.error(f"SQL execution error: {e} in {sql_script}")
         return {
             "success": False,
             "columns": [],
@@ -537,16 +599,17 @@ def execute_sql_safely(sql_script: str) -> dict:
     finally:
         conn.close()
 
-# ----------------- FLASK ROUTES ----------------- #
-
+# -----------------------------------------------------------------------------
+# 6. REST API ROUTES
+# -----------------------------------------------------------------------------
 @app.route("/")
 def index():
-    """Renders main single-page application dashboard."""
+    """Renders main application dashboard."""
     return render_template("index.html")
 
 @app.route("/api/schema", methods=["GET"])
 def api_schema():
-    """Returns live schema introspection."""
+    """Returns dynamic database schema introspection."""
     schema = introspect_schema()
     return jsonify({
         "success": True,
@@ -557,32 +620,34 @@ def api_schema():
 @app.route("/api/execute", methods=["POST"])
 def api_execute():
     """
-    Main execution endpoint:
+    Main Autonomous Execution Endpoint:
     Accepts: { "prompt": "...", "api_key": "...", "direct_sql": false }
-    Introspects schema -> Calls Gemini or Autonomous Engine -> Executes SQL -> Returns payload.
+    Pre-LLM sanitizes prompt -> Introspects Schema -> Generates SQL -> Executes -> Returns structured response.
     """
     data = request.get_json() or {}
-    prompt = data.get("prompt", "").strip()
+    raw_prompt = data.get("prompt", "").strip()
     user_key = data.get("api_key", "").strip()
     direct_sql = data.get("direct_sql", False)
 
-    if not prompt:
+    if not raw_prompt:
         return jsonify({"success": False, "error": "Prompt cannot be empty."}), 400
 
-    # Step 1: Introspect live schema
+    # 1. Sanitize prompt
+    cleaned_prompt = sanitize_natural_prompt(raw_prompt)
+
+    # 2. Introspect live schema
     current_schema = introspect_schema()
 
-    # Step 2: Determine SQL
+    # 3. Determine SQL
     if direct_sql:
         ai_result = {
-            "sql": prompt,
-            "explanation": "Executed direct SQL statement provided by user.",
+            "sql": raw_prompt,
+            "explanation": "Executed direct SQL statement.",
             "query_type": "Direct SQL",
-            "insights": "Direct database query execution.",
             "source": "Manual"
         }
     else:
-        ai_result = generate_sql_with_gemini(prompt, current_schema, user_key)
+        ai_result = generate_sql_with_gemini(cleaned_prompt, current_schema, user_key)
 
     generated_sql = ai_result.get("sql", "").strip()
     if not generated_sql:
@@ -592,15 +657,16 @@ def api_execute():
             "ai_result": ai_result
         }), 400
 
-    # Step 3: Execute SQL in database.db safely
+    # 4. Safe transaction execution
     exec_result = execute_sql_safely(generated_sql)
 
-    # Step 4: Introspect updated schema to detect created/altered tables
+    # 5. Live schema refresh
     updated_schema = introspect_schema()
 
     return jsonify({
         "success": exec_result["success"],
-        "prompt": prompt,
+        "prompt": raw_prompt,
+        "cleaned_prompt": cleaned_prompt,
         "ai_result": ai_result,
         "execution": exec_result,
         "schema": updated_schema,
@@ -609,7 +675,7 @@ def api_execute():
 
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
-    """Resets the database to a 100% empty state (drops all tables)."""
+    """Cleanly drops all user tables, restoring zero-config empty state."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -618,7 +684,6 @@ def api_reset():
         for t in tables:
             cursor.execute(f"DROP TABLE IF EXISTS \"{t['name']}\";")
         conn.commit()
-        logger.info(f"Reset database. Dropped {len(tables)} tables.")
         schema = introspect_schema()
         return jsonify({
             "success": True,
@@ -631,75 +696,28 @@ def api_reset():
     finally:
         conn.close()
 
-@app.route("/api/presets", methods=["GET"])
-def api_presets():
-    """Returns curated presets for quick 1-click demonstrations."""
-    presets = [
-        {
-            "category": "Zero-Config Initialization",
-            "label": "Build HR & Payroll System",
-            "prompt": "Create an employees table and add 4 members: Sarah in AI ($145,000), Michael in Backend ($120,000), Elena in Product ($130,000), and David in Finance ($95,000)."
-        },
-        {
-            "category": "E-Commerce & Revenue",
-            "label": "Create Orders & Store Transactions",
-            "prompt": "Create an orders table with customer name, item name, quantity, unit price, and record 4 recent purchases."
-        },
-        {
-            "category": "Autonomous Analytics",
-            "label": "Average Salary by Department",
-            "prompt": "Show average salary and employee count grouped by department ordered by highest average."
-        },
-        {
-            "category": "SaaS Subscriptions",
-            "label": "Create SaaS Subscriptions",
-            "prompt": "Create a subscriptions table with company name, tier (Starter, Pro, Enterprise), monthly price, and status."
-        },
-        {
-            "category": "Data Modification",
-            "label": "Add Single Employee",
-            "prompt": "Add an employee Marcus Vance in Cybersecurity with salary 135000"
-        }
-    ]
-    return jsonify({"success": True, "presets": presets})
-
 @app.route("/api/save-key", methods=["POST"])
 def api_save_key():
-    """Validates and saves the Gemini API key in runtime."""
+    """Validates and stores the Gemini API key in runtime."""
     global GEMINI_API_KEY
     data = request.get_json() or {}
     key = data.get("api_key", "").strip()
-    
+
     if not key:
         return jsonify({"success": False, "error": "API Key cannot be empty."}), 400
-        
+
     try:
         if genai:
             genai.configure(api_key=key)
-            # Test model listing
             model = genai.GenerativeModel("gemini-1.5-flash")
             test_resp = model.generate_content("Respond with 'OK'")
             if test_resp and test_resp.text:
                 GEMINI_API_KEY = key
                 return jsonify({"success": True, "message": "Gemini API key verified and saved successfully!"})
         GEMINI_API_KEY = key
-        return jsonify({"success": True, "message": "Key stored for current session."})
+        return jsonify({"success": True, "message": "API Key stored for session."})
     except Exception as e:
-        logger.error(f"Key verification error: {e}")
         return jsonify({"success": False, "error": f"Verification failed: {str(e)}"}), 400
-
-@app.route("/api/health", methods=["GET"])
-def api_health():
-    """Health check endpoint."""
-    schema = introspect_schema()
-    return jsonify({
-        "status": "healthy",
-        "database": {
-            "tables_count": schema["total_tables"],
-            "total_rows": schema["total_rows"]
-        },
-        "gemini_configured": bool(GEMINI_API_KEY)
-    })
 
 if __name__ == "__main__":
     logger.info("Starting NeoAssist AI Server on http://127.0.0.1:5000 ...")

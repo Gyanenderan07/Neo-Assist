@@ -3,308 +3,204 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NeoAssist AI — Voice & Text Autonomous Conversational Database Platform</title>
-    <meta name="description" content="Enterprise-grade AI platform converting natural speech and business text into executable, optimized SQL with real-time schema evolution and interactive data visualization.">
+    <title>NeoAssist AI — Autonomous Conversational Database Platform</title>
+    <meta name="description" content="Autonomous AI platform converting natural speech and text into executable SQLite queries with live schema evolution and interactive data grids.">
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     
     <!-- Font Awesome 6.5.1 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
-    <!-- Custom Stylesheet -->
+    <!-- Stylesheet -->
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="app-body">
-    <!-- Ambient Background Glows -->
-    <div class="ambient-glow glow-top-left"></div>
-    <div class="ambient-glow glow-bottom-right"></div>
-    <div class="ambient-grid-overlay"></div>
+    <!-- Ambient Subtle Background Grid -->
+    <div class="ambient-glow glow-top"></div>
+    <div class="ambient-glow glow-bottom"></div>
+    <div class="ambient-grid"></div>
 
-    <!-- MAIN APP CONTAINER -->
-    <div class="app-container">
-        
-        <!-- TOP NAVIGATION BAR -->
-        <header class="top-nav" id="topNav">
-            <div class="nav-left">
-                <div class="brand-cluster">
-                    <div class="logo-orb">
-                        <div class="orb-core"></div>
-                        <div class="orb-ring"></div>
-                        <i class="fa-solid fa-brain"></i>
-                    </div>
-                    <div class="brand-text">
-                        <div class="brand-title">
-                            <span class="brand-neo">Neo</span><span class="brand-assist">Assist</span>
-                            <span class="brand-badge">AI</span>
-                            <span class="version-tag">v2.4 PRO</span>
-                        </div>
-                        <div class="brand-subtitle">Autonomous Voice & Text Database Engine</div>
-                    </div>
+    <div class="app-layout">
+        <!-- TOP NAVIGATION -->
+        <header class="top-nav">
+            <div class="nav-brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-database"></i>
                 </div>
-
-                <div class="status-pills">
-                    <div class="status-pill active-pill" id="engineStatusPill" title="Server and Database Connection">
-                        <span class="pulse-dot"></span>
-                        <span class="pill-text">Autonomous Engine Ready</span>
+                <div class="brand-info">
+                    <div class="brand-name">
+                        <span>NeoAssist</span> <span class="accent-text">AI</span>
                     </div>
-                    <div class="status-pill info-pill" id="dbModePill" title="Live SQLite Database Mode">
-                        <i class="fa-solid fa-database"></i>
-                        <span id="dbTableCountBadge">0 Tables Active</span>
-                    </div>
-                    <div class="status-pill ai-pill" id="aiModelBadge" title="AI Model Status">
-                        <i class="fa-solid fa-microchip"></i>
-                        <span id="aiModelText">Gemini 1.5 Flash</span>
-                    </div>
+                    <span class="brand-desc">Autonomous Database Platform</span>
                 </div>
             </div>
 
-            <div class="nav-right">
-                <button class="nav-btn ghost-btn" id="apiKeyModalBtn" title="Configure Google Gemini API Key">
+            <div class="nav-controls">
+                <div class="live-counter-pill" id="navTableCount" title="Active user tables in database">
+                    <span class="pulse-indicator"></span>
+                    <span id="navTableCountText">0 Tables Active</span>
+                </div>
+
+                <button class="action-btn ghost-btn" id="apiKeyModalBtn" title="Set Google Gemini API Key">
                     <i class="fa-solid fa-key"></i>
                     <span>Gemini API Key</span>
                 </button>
-                <button class="nav-btn danger-btn" id="resetDbBtn" title="Reset Database to 0 Tables (Empty State)">
+
+                <button class="action-btn danger-btn" id="resetDbBtn" title="Reset Database to 0 Tables">
                     <i class="fa-solid fa-rotate-left"></i>
                     <span>Reset Database</span>
-                </button>
-                <button class="nav-icon-btn" id="audioToggleBtn" title="Toggle Sound Feedback">
-                    <i class="fa-solid fa-volume-high" id="audioToggleIcon"></i>
                 </button>
             </div>
         </header>
 
-        <!-- MAIN WORKSPACE LAYOUT -->
-        <div class="workspace-grid">
+        <!-- MAIN TWO-COLUMN WORKSPACE -->
+        <div class="main-workspace">
             
-            <!-- LEFT PANEL: LIVE SCHEMA EXPLORER -->
-            <aside class="schema-sidebar" id="schemaSidebar">
-                <div class="sidebar-header">
-                    <div class="sidebar-title-group">
-                        <i class="fa-solid fa-network-wired cyan-glow-icon"></i>
-                        <span class="sidebar-heading">Live Schema Tree</span>
-                        <span class="badge-count" id="tableCountBadge">0</span>
+            <!-- 1. REAL-TIME LIVE DATABASE SCHEMA TREE (SIDEBAR) -->
+            <aside class="schema-panel" id="schemaSidebar">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i class="fa-solid fa-sitemap accent-icon"></i>
+                        <span>Live Database Schema</span>
+                        <span class="count-tag" id="sidebarTableCount">0</span>
                     </div>
-                    <button class="sidebar-action-btn" id="refreshSchemaBtn" title="Refresh Live Database Schema">
-                        <i class="fa-solid fa-arrow-rotate-right"></i>
+                    <button class="icon-tool-btn" id="refreshSchemaBtn" title="Refresh Live Schema">
+                        <i class="fa-solid fa-rotate-right"></i>
                     </button>
                 </div>
 
-                <div class="schema-search-bar">
+                <div class="search-input-wrap">
                     <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" id="schemaSearchInput" placeholder="Filter tables & columns...">
+                    <input type="text" id="schemaSearchInput" placeholder="Filter tables and columns...">
                 </div>
 
-                <!-- DYNAMIC SCHEMA TREE CONTAINER -->
                 <div class="schema-tree-scroll" id="schemaTreeContainer">
                     <!-- Populated dynamically via main.js -->
-                    <div class="schema-empty-state" id="schemaEmptyState">
-                        <div class="empty-icon-wrap">
-                            <i class="fa-solid fa-cube"></i>
-                        </div>
-                        <h4>Zero-Config Start</h4>
-                        <p>Database is currently 100% empty (0 tables).</p>
-                        <div class="empty-guidance">
-                            <i class="fa-solid fa-wand-magic-sparkles"></i>
-                            <span>Speak or type an instruction to dynamically build tables & insert records automatically!</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="sidebar-footer">
-                    <div class="db-meta-row">
-                        <span class="meta-label"><i class="fa-solid fa-server"></i> Engine:</span>
-                        <span class="meta-value">SQLite 3 (Native)</span>
-                    </div>
-                    <div class="db-meta-row">
-                        <span class="meta-label"><i class="fa-solid fa-bolt"></i> Mode:</span>
-                        <span class="meta-value">Auto DDL / DML / DQL</span>
+                    <div class="empty-schema-msg" id="emptySchemaPlaceholder">
+                        <div class="empty-icon"><i class="fa-solid fa-layer-group"></i></div>
+                        <h5>Zero-Config Empty State</h5>
+                        <p>Database has 0 tables. Speak or type a command to autonomously generate tables and insert records.</p>
                     </div>
                 </div>
             </aside>
 
-            <!-- CENTER & RIGHT: HERO COMMAND CONSOLE + TERMINAL + DATA WORKSPACE -->
-            <main class="main-console">
+            <!-- MAIN CONTENT AREA -->
+            <main class="console-workspace">
 
-                <!-- 1. HERO COMMAND CONSOLE -->
-                <section class="command-hero-card" id="commandHeroCard">
-                    <div class="console-header-bar">
-                        <div class="console-label">
-                            <i class="fa-solid fa-terminal console-icon"></i>
-                            <span>Autonomous Voice & Text Command Center</span>
-                        </div>
-                        <div class="input-mode-toggle">
-                            <span class="mode-label">Natural Language AI</span>
-                            <label class="switch" title="Toggle Direct SQL execution vs Natural Language AI">
-                                <input type="checkbox" id="directSqlToggle">
-                                <span class="slider round"></span>
-                            </label>
-                            <span class="mode-label" id="directSqlLabel">Direct SQL</span>
-                        </div>
+                <!-- 2. COMMAND CONSOLE (VOICE + TEXT + EXECUTE) -->
+                <section class="command-console-card">
+                    <div class="console-top-row">
+                        <span class="console-label">
+                            <i class="fa-solid fa-terminal accent-icon"></i> Command Console
+                        </span>
+                        <label class="toggle-control" title="Toggle between Natural Language AI and Direct SQL">
+                            <span class="toggle-text">Direct SQL Mode</span>
+                            <input type="checkbox" id="directSqlToggle">
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
 
-                    <!-- Voice Waveform Animation Overlay (Visible when listening) -->
-                    <div class="voice-listening-banner" id="voiceListeningBanner">
-                        <div class="voice-wave-container">
-                            <span class="wave-bar"></span>
-                            <span class="wave-bar"></span>
-                            <span class="wave-bar"></span>
-                            <span class="wave-bar"></span>
-                            <span class="wave-bar"></span>
+                    <!-- Voice Listening Waveform Banner (Active when recording) -->
+                    <div class="voice-active-bar" id="voiceActiveBar">
+                        <div class="sound-wave">
+                            <span></span><span></span><span></span><span></span><span></span>
                         </div>
-                        <div class="voice-text-preview" id="voiceTranscriptPreview">
-                            Listening for voice command... Speak naturally!
-                        </div>
-                        <button class="voice-cancel-btn" id="voiceCancelBtn" title="Stop Listening">
+                        <span class="voice-transcript" id="voiceTranscriptText">Listening for speech input...</span>
+                        <button class="voice-close-btn" id="voiceCancelBtn" title="Cancel voice recognition">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
 
-                    <!-- INPUT FIELD CLUSTER -->
-                    <div class="command-input-wrapper" id="commandInputWrapper">
-                        <!-- Microphone Action Button -->
-                        <div class="mic-cluster">
-                            <button class="mic-button" id="micBtn" title="Click to Speak (Web Speech API)">
-                                <div class="mic-rings"></div>
-                                <i class="fa-solid fa-microphone" id="micIcon"></i>
-                            </button>
-                        </div>
+                    <!-- Input Cluster -->
+                    <div class="input-cluster" id="inputCluster">
+                        <button class="mic-trigger-btn" id="micBtn" title="Click to speak (Web Speech API)">
+                            <div class="mic-pulse-ring"></div>
+                            <i class="fa-solid fa-microphone" id="micIcon"></i>
+                        </button>
 
-                        <!-- Multiline Prompt Input -->
-                        <div class="textarea-container">
+                        <div class="input-field-wrap">
                             <textarea 
                                 id="promptInput" 
                                 rows="2" 
-                                placeholder="Speak or type a command... (e.g. 'Add an employee Sarah in Finance with salary 95000' or 'Show average salary grouped by department')"
+                                placeholder="Speak or type your database instruction... (e.g. 'Add an employee Sarah in Finance with salary 95000' or 'Show average salary grouped by department')"
                             ></textarea>
                         </div>
 
-                        <!-- Execute Action Button -->
-                        <div class="action-cluster">
-                            <button class="btn-execute" id="executeBtn" title="Run Command (Ctrl + Enter)">
-                                <div class="btn-execute-glow"></div>
-                                <span class="btn-content">
-                                    <i class="fa-solid fa-bolt-lightning" id="executeIcon"></i>
-                                    <span id="executeBtnText">Execute</span>
-                                </span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- PRESET QUICK TRIGGER CHIPS -->
-                    <div class="preset-chips-cluster">
-                        <span class="presets-title"><i class="fa-solid fa-sparkles"></i> Instant Scenarios:</span>
-                        <div class="preset-chips-scroll" id="presetChipsContainer">
-                            <button class="preset-chip" data-prompt="Add an employee Sarah in Finance with salary 95000">
-                                <i class="fa-solid fa-user-plus"></i> Add Employee Sarah ($95K)
-                            </button>
-                            <button class="preset-chip" data-prompt="Create a products table with categories, stock, prices and add 4 electronics items">
-                                <i class="fa-solid fa-box-open"></i> Build Products Catalog
-                            </button>
-                            <button class="preset-chip" data-prompt="Create an orders table with customer name, item name, quantity, unit price and insert 4 orders">
-                                <i class="fa-solid fa-cart-shopping"></i> Create Orders & Sales
-                            </button>
-                            <button class="preset-chip" data-prompt="Show average salary and count grouped by department ordered by highest average">
-                                <i class="fa-solid fa-chart-pie"></i> Avg Salary by Dept
-                            </button>
-                            <button class="preset-chip" data-prompt="Show all tables and their structure in the database">
-                                <i class="fa-solid fa-table-list"></i> List All Tables
-                            </button>
-                        </div>
+                        <button class="execute-trigger-btn" id="executeBtn" title="Execute Pipeline (Ctrl + Enter)">
+                            <i class="fa-solid fa-bolt" id="executeIcon"></i>
+                            <span id="executeBtnText">Execute</span>
+                        </button>
                     </div>
                 </section>
 
-                <!-- 2. QUERY TERMINAL PANEL (LIVE GENERATED SQL & AI INSIGHTS) -->
-                <section class="terminal-panel-card" id="terminalPanelCard">
-                    <div class="terminal-header">
-                        <div class="terminal-controls">
-                            <span class="terminal-dot dot-red"></span>
-                            <span class="terminal-dot dot-yellow"></span>
-                            <span class="terminal-dot dot-green"></span>
-                            <span class="terminal-title"><i class="fa-solid fa-code"></i> AUTONOMOUS SQL PIPELINE</span>
+                <!-- 3. GENERATED SQL INSTRUCTION TERMINAL -->
+                <section class="terminal-panel-card">
+                    <div class="terminal-bar">
+                        <div class="terminal-mac-dots">
+                            <span class="mac-dot red"></span>
+                            <span class="mac-dot yellow"></span>
+                            <span class="mac-dot green"></span>
+                            <span class="terminal-title">AUTONOMOUS SQL PIPELINE</span>
                         </div>
 
-                        <div class="terminal-meta-pills">
-                            <span class="meta-pill query-type-pill" id="queryTypeBadge">READY</span>
-                            <span class="meta-pill latency-pill" id="queryLatencyBadge"><i class="fa-solid fa-clock"></i> 0.0 ms</span>
-                            <span class="meta-pill rowcount-pill" id="queryRowBadge"><i class="fa-solid fa-layer-group"></i> 0 rows</span>
-                            <button class="copy-sql-btn" id="copySqlBtn" title="Copy SQL to Clipboard">
+                        <div class="terminal-status-group">
+                            <span class="badge type-badge" id="queryTypeBadge">IDLE</span>
+                            <span class="badge latency-badge" id="latencyBadge"><i class="fa-solid fa-clock"></i> 0.0 ms</span>
+                            <span class="badge rows-badge" id="rowsBadge"><i class="fa-solid fa-table-list"></i> 0 rows</span>
+                            <button class="copy-action-btn" id="copySqlBtn" title="Copy SQL to Clipboard">
                                 <i class="fa-regular fa-copy" id="copyIcon"></i>
                                 <span id="copyBtnText">Copy SQL</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Code Display Area -->
-                    <div class="terminal-code-body">
+                    <div class="terminal-code-area">
                         <pre><code class="language-sql" id="sqlCodeBlock">-- NeoAssist AI Autonomous Query Engine
 -- Awaiting user voice or text input...
--- Dynamic schema synthesis & SQL generation will appear here in real-time.</code></pre>
+-- Executed SQLite statements will appear here in real-time.</code></pre>
                     </div>
 
-                    <!-- AI Business Insights & Operational Summary -->
-                    <div class="terminal-insights-drawer" id="insightsDrawer">
-                        <div class="insights-header" id="insightsToggle">
-                            <div class="insights-title">
-                                <i class="fa-solid fa-lightbulb-on text-yellow"></i>
-                                <span>AI Strategic Insights & Schema Analysis</span>
-                            </div>
-                            <span class="insights-source" id="insightsSourceTag">Autonomous Engine</span>
-                        </div>
-                        <div class="insights-content" id="insightsContent">
-                            System is initialized with zero-config. Submit your first natural voice or text command to synthesize tables and query data autonomously.
-                        </div>
+                    <div class="terminal-explanation-footer" id="explanationFooter">
+                        <i class="fa-solid fa-circle-info accent-icon"></i>
+                        <span id="explanationText">System ready. Enter any natural language or voice command above.</span>
                     </div>
                 </section>
 
-                <!-- 3. INTERACTIVE DATA WORKSPACE -->
-                <section class="data-workspace-card" id="dataWorkspaceCard">
-                    <div class="workspace-header">
-                        <div class="workspace-title-group">
-                            <i class="fa-solid fa-table-cells cyan-glow-icon"></i>
-                            <span class="workspace-heading">Interactive Data Workspace</span>
-                            <span class="data-count-tag" id="dataCountTag">0 records</span>
+                <!-- 4. DYNAMIC DATA GRID -->
+                <section class="data-grid-card">
+                    <div class="grid-toolbar">
+                        <div class="grid-title-group">
+                            <i class="fa-solid fa-table accent-icon"></i>
+                            <span class="grid-title">Result Data Grid</span>
+                            <span class="record-counter" id="recordCounterTag">0 records</span>
                         </div>
 
-                        <div class="workspace-actions">
-                            <div class="table-filter-wrap">
+                        <div class="grid-actions">
+                            <div class="filter-box">
                                 <i class="fa-solid fa-filter"></i>
-                                <input type="text" id="tableFilterInput" placeholder="Quick filter rows...">
+                                <input type="text" id="tableFilterInput" placeholder="Filter rows...">
                             </div>
-                            <button class="data-action-btn" id="exportCsvBtn" title="Export current dataset to CSV">
-                                <i class="fa-solid fa-file-csv"></i>
-                                <span>CSV</span>
+                            <button class="export-btn" id="exportCsvBtn" title="Download current records as CSV">
+                                <i class="fa-solid fa-file-csv"></i> <span>Export CSV</span>
                             </button>
-                            <button class="data-action-btn" id="exportJsonBtn" title="Export current dataset to JSON">
-                                <i class="fa-solid fa-file-code"></i>
-                                <span>JSON</span>
+                            <button class="export-btn" id="exportJsonBtn" title="Download current records as JSON">
+                                <i class="fa-solid fa-file-code"></i> <span>Export JSON</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Dynamic Table Wrapper -->
-                    <div class="table-responsive-container" id="tableContainer">
-                        <div class="table-empty-state" id="tableEmptyState">
-                            <div class="table-empty-art">
-                                <i class="fa-solid fa-chart-simple"></i>
-                            </div>
-                            <h3>No Active Result Set</h3>
-                            <p>Execute an AI prompt or direct SQL query above to visualize structured data records here.</p>
+                    <div class="table-scroll-view" id="tableContainer">
+                        <div class="empty-table-state" id="emptyTableState">
+                            <i class="fa-solid fa-database empty-grid-icon"></i>
+                            <p>No active result set. Execute a query above to view records.</p>
                         </div>
-                        <!-- Table injected dynamically via JS -->
-                        <table class="neo-table" id="neoDataTable" style="display: none;">
-                            <thead id="neoTableHead"></thead>
-                            <tbody id="neoTableBody"></tbody>
+                        <table class="data-table" id="dataTable" style="display: none;">
+                            <thead id="tableHead"></thead>
+                            <tbody id="tableBody"></tbody>
                         </table>
-                    </div>
-
-                    <div class="workspace-footer">
-                        <div class="footer-hint">
-                            <i class="fa-solid fa-circle-info"></i>
-                            <span id="workspaceFooterHint">Click any column header to sort ascending / descending. Live schema sync active.</span>
-                        </div>
                     </div>
                 </section>
 
@@ -313,77 +209,65 @@
     </div>
 
     <!-- MODAL: GEMINI API KEY CONFIGURATION -->
-    <div class="neo-modal-backdrop" id="apiKeyModal">
-        <div class="neo-modal-card">
-            <div class="modal-header">
-                <div class="modal-title">
-                    <i class="fa-solid fa-key cyan-glow-icon"></i>
+    <div class="modal-backdrop" id="apiKeyModal">
+        <div class="modal-box">
+            <div class="modal-head">
+                <div class="modal-head-title">
+                    <i class="fa-solid fa-key accent-icon"></i>
                     <span>Configure Google Gemini API</span>
                 </div>
-                <button class="modal-close-btn" id="closeApiKeyModalBtn">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+                <button class="modal-close" id="closeApiKeyModalBtn"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                <p class="modal-description">
-                    Connect your Google Gemini API key to activate deep natural language reasoning across complex multi-table joins, subqueries, and intelligent schema inference.
-                </p>
-                <div class="input-group">
+                <p class="modal-text">Connect your Google Gemini API key to activate deep natural language parsing across complex multi-table joins, subqueries, and intelligent schema evolution.</p>
+                <div class="form-group">
                     <label for="geminiKeyInput">Gemini API Key</label>
-                    <div class="key-input-wrapper">
+                    <div class="key-field">
                         <input type="password" id="geminiKeyInput" placeholder="AIzaSy..." autocomplete="off">
-                        <button class="toggle-vis-btn" id="toggleKeyVisibility" title="Toggle Visibility">
+                        <button class="vis-toggle" id="toggleKeyVisBtn" title="Toggle Visibility">
                             <i class="fa-regular fa-eye" id="keyVisIcon"></i>
                         </button>
                     </div>
                 </div>
-                <div class="key-help-box">
+                <div class="key-link">
                     <i class="fa-solid fa-circle-question"></i>
-                    <span>Don't have a key? Get one in seconds from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio <i class="fa-solid fa-arrow-up-right-from-square"></i></a></span>
+                    <span>Get a free key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio <i class="fa-solid fa-arrow-up-right-from-square"></i></a></span>
                 </div>
-                <div class="modal-status-msg" id="keyModalStatus"></div>
+                <div class="modal-feedback" id="keyStatusFeedback"></div>
             </div>
-            <div class="modal-footer">
-                <button class="nav-btn ghost-btn" id="cancelApiKeyBtn">Cancel</button>
-                <button class="nav-btn primary-btn" id="saveApiKeyBtn">
-                    <i class="fa-solid fa-floppy-disk"></i>
-                    <span>Save & Verify Key</span>
+            <div class="modal-actions">
+                <button class="action-btn ghost-btn" id="cancelApiKeyBtn">Cancel</button>
+                <button class="action-btn primary-btn" id="saveApiKeyBtn">
+                    <i class="fa-solid fa-floppy-disk"></i> <span>Save & Verify Key</span>
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- MODAL: RESET CONFIRMATION -->
-    <div class="neo-modal-backdrop" id="resetModal">
-        <div class="neo-modal-card">
-            <div class="modal-header">
-                <div class="modal-title text-danger">
+    <!-- MODAL: RESET DATABASE CONFIRMATION -->
+    <div class="modal-backdrop" id="resetModal">
+        <div class="modal-box">
+            <div class="modal-head">
+                <div class="modal-head-title text-danger">
                     <i class="fa-solid fa-triangle-exclamation"></i>
                     <span>Reset SQLite Database</span>
                 </div>
-                <button class="modal-close-btn" id="closeResetModalBtn">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+                <button class="modal-close" id="closeResetModalBtn"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                <p class="modal-description">
-                    Are you sure you want to drop all tables in <strong>database.db</strong>?
-                    <br><br>
-                    This will restore NeoAssist AI to its pure <strong>Zero-Config Empty State</strong> (0 tables), allowing you to experience the autonomous schema generation from scratch.
-                </p>
+                <p class="modal-text">Are you sure you want to drop all tables in <strong>database.db</strong>? This resets the platform back to an empty state (0 tables) so you can test autonomous schema synthesis from scratch.</p>
             </div>
-            <div class="modal-footer">
-                <button class="nav-btn ghost-btn" id="cancelResetBtn">Cancel</button>
-                <button class="nav-btn danger-btn" id="confirmResetBtn">
-                    <i class="fa-solid fa-trash-can"></i>
-                    <span>Confirm Reset (0 Tables)</span>
+            <div class="modal-actions">
+                <button class="action-btn ghost-btn" id="cancelResetBtn">Cancel</button>
+                <button class="action-btn danger-btn" id="confirmResetBtn">
+                    <i class="fa-solid fa-trash-can"></i> <span>Confirm Reset</span>
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- TOAST NOTIFICATION CONTAINER -->
-    <div class="toast-container" id="toastContainer"></div>
+    <!-- Toast Notification Container -->
+    <div class="toast-area" id="toastContainer"></div>
 
     <!-- Application Script -->
     <script src="/static/main.js"></script>
