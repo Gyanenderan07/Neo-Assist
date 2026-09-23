@@ -20,7 +20,13 @@ logger = logging.getLogger("NeoAssistAI")
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.urandom(24).hex()
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database.db")
+# Determine database path (use /tmp/database.db in Vercel serverless environments)
+if os.environ.get("VERCEL"):
+    DB_PATH = "/tmp/database.db"
+    logger.info("Running on Vercel: using /tmp/database.db")
+else:
+    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database.db")
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # Optional Gemini setup
@@ -36,6 +42,7 @@ except Exception as e:
 
 def get_db_connection():
     """Returns a SQLite connection configured with Row factory."""
+    init_db()
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -44,6 +51,9 @@ def get_db_connection():
 def init_db():
     """Initializes the database.db file cleanly in an empty state (0 tables)."""
     if not os.path.exists(DB_PATH):
+        parent_dir = os.path.dirname(DB_PATH)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
         conn = sqlite3.connect(DB_PATH)
         conn.close()
         logger.info(f"Initialized clean empty SQLite database at {DB_PATH}")
